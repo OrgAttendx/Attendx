@@ -154,8 +154,8 @@ from src.models.schemas import ForgotPasswordRequest, ResetPasswordRequest
 # Email Configuration for Password Reset
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=achyutshekhar54@gmail.com
-SMTP_PASSWORD=xtlqsfbrdwjkhdks
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-gmail-app-password
 FRONTEND_URL=http://localhost:5173
 ```
 

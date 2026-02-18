@@ -14,9 +14,18 @@ async def send_password_reset_email(email: str, token: str, name: str) -> bool:
     """Send password reset email with verification link"""
     try:
         if not SMTP_USER or not SMTP_PASSWORD:
-            print("⚠️  SMTP credentials not configured. Set SMTP_USER and SMTP_PASSWORD in .env")
+            error_msg = "❌ SMTP credentials not configured. Email cannot be sent."
+            print(error_msg)
+            print(f"   Missing: SMTP_USER={bool(SMTP_USER)}, SMTP_PASSWORD={bool(SMTP_PASSWORD)}")
+            print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
             print(f"📧 Debug: Reset link would be: {FRONTEND_URL}/reset-password?token={token}")
+            # Return False to indicate email was not sent, but don't raise exception
+            # to avoid exposing this to users (security best practice)
             return False
+        
+        if not FRONTEND_URL or FRONTEND_URL == "http://localhost:5173":
+            print(f"⚠️  Warning: FRONTEND_URL is set to localhost. This will not work in production.")
+            print(f"   Current FRONTEND_URL: {FRONTEND_URL}")
         
         reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
         

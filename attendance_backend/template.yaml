@@ -1,8 +1,8 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   Attendance Backend
-  
+
   Serverless FastAPI application
 
 Globals:
@@ -39,6 +39,10 @@ Resources:
           DB_URL: !Ref DatabaseUrl
           SECRET_KEY: !Ref SecretKey
           FRONTEND_URL: !Ref FrontendUrl
+          SMTP_HOST: !Ref SmtpHost
+          SMTP_PORT: !Ref SmtpPort
+          SMTP_USER: !Ref SmtpUser
+          SMTP_PASSWORD: !Ref SmtpPassword
 
   # Optional SQS Queue for Async Tasks (Notifications)
   NotificationQueue:
@@ -58,6 +62,21 @@ Parameters:
     Type: String
     Description: Frontend URL for CORS
     Default: "http://localhost:5173"
+  SmtpHost:
+    Type: String
+    Description: SMTP Host (e.g., smtp.gmail.com)
+    Default: "smtp.gmail.com"
+  SmtpPort:
+    Type: String
+    Description: SMTP Port
+    Default: "587"
+  SmtpUser:
+    Type: String
+    Description: SMTP Username (Gmail address)
+  SmtpPassword:
+    Type: String
+    Description: SMTP Password (Gmail App Password)
+    NoEcho: true
 
 Outputs:
   ApiUrl:
