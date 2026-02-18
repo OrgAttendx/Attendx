@@ -46,3 +46,12 @@ class StartSessionRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     radius_meters: Optional[int] = 50
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str

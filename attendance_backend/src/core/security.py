@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from fastapi import Depends, HTTPException, status
@@ -47,3 +48,13 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
         return {"user_id": user_id, "role": role}
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+
+def create_reset_token() -> str:
+    """Generate a secure random token for password reset"""
+    return secrets.token_urlsafe(32)
+
+
+def create_reset_token_expiry() -> datetime:
+    """Create expiration time for reset token (1 hour from now)"""
+    return datetime.utcnow() + timedelta(hours=1)

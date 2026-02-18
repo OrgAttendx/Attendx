@@ -99,7 +99,7 @@ python database_manager.py
 4. Start the backend server:
 
 ```bash
-python -m uvicorn main:app --reload
+py -m uvicorn main:app --reload
 ```
 
 The backend will be running at http://127.0.0.1:8000
