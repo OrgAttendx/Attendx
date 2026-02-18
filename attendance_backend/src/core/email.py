@@ -53,22 +53,25 @@ def _send_email_sync(to_email: str, subject: str, html_content: str, text_conten
         return False
 
 
-async def send_password_reset_email(email: str, token: str, name: str) -> bool:
+async def send_password_reset_email(email: str, token: str, name: str, frontend_url: str = None) -> bool:
     """Send password reset email with verification link - non-blocking"""
     try:
+        # Use provided frontend_url if available, otherwise fall back to env var
+        base_url = frontend_url if frontend_url else FRONTEND_URL
         if not SMTP_USER or not SMTP_PASSWORD:
             error_msg = "❌ SMTP credentials not configured. Email cannot be sent."
             print(error_msg)
             print(f"   Missing: SMTP_USER={bool(SMTP_USER)}, SMTP_PASSWORD={bool(SMTP_PASSWORD)}")
             print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
-            print(f"📧 Debug: Reset link would be: {FRONTEND_URL}/reset-password?token={token}")
+            print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
+            print(f"📧 Debug: Reset link would be: {base_url}/reset-password?token={token}")
             return False
         
-        if not FRONTEND_URL or FRONTEND_URL == "http://localhost:5173":
+        if not base_url or base_url == "http://localhost:5173":
             print(f"⚠️  Warning: FRONTEND_URL is set to localhost. This will not work in production.")
-            print(f"   Current FRONTEND_URL: {FRONTEND_URL}")
+            print(f"   Current URL: {base_url}")
         
-        reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+        reset_link = f"{base_url}/reset-password?token={token}"
         
         # HTML version
         html = f"""

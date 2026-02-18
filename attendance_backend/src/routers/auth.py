@@ -184,7 +184,8 @@ async def forgot_password(request: ForgotPasswordRequest):
         email_sent = await send_password_reset_email(
             email=user["email"],
             token=token,
-            name=user["name"]
+            name=user["name"],
+            frontend_url=request.frontend_url
         )
         
         if not email_sent:

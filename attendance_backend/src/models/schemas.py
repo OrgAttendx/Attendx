@@ -50,6 +50,7 @@ class StartSessionRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: str
+    frontend_url: Optional[str] = None
 
 
 class ResetPasswordRequest(BaseModel):
