@@ -1,80 +1,31 @@
-import smtplib
-import ssl
 import os
-import asyncio
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
+import resend
 
-# Thread pool for blocking SMTP operations - prevents blocking the async event loop
-_email_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_sender")
-
-
-def _send_email_sync(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
-    """Synchronous email sending - runs in a thread pool to avoid blocking"""
-    # Read env vars at call time so Lambda/production env vars are always picked up
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = smtp_user
-        msg["To"] = to_email
-        
-        part1 = MIMEText(text_content, "plain")
-        part2 = MIMEText(html_content, "html")
-        msg.attach(part1)
-        msg.attach(part2)
-        
-        # Create SSL context for secure connection
-        context = ssl.create_default_context()
-        
-        # Use timeout to prevent hanging indefinitely
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-            server.starttls(context=context)
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-        
-        print(f"✅ Email sent to {to_email}")
-        return True
-        
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ SMTP Authentication failed: {str(e)}")
-        print("   Make sure you're using a Gmail App Password, not your regular password.")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"❌ SMTP error: {str(e)}")
-        return False
-    except Exception as e:
-        print(f"❌ Failed to send email: {str(e)}")
-        return False
+# Ensure env vars are loaded
+load_dotenv()
 
 
 async def send_password_reset_email(email: str, token: str, name: str, frontend_url: str = None) -> bool:
-    """Send password reset email with verification link - non-blocking"""
+    """Send password reset email with verification link using Resend API"""
     try:
-        # Read env vars at call time so Lambda/production env vars are always picked up
-        smtp_user = os.getenv("SMTP_USER")
-        smtp_password = os.getenv("SMTP_PASSWORD")
+        resend_api_key = os.getenv("RESEND_API_KEY")
+        from_email = os.getenv("RESEND_FROM_EMAIL", "AttendX <onboarding@resend.dev>")
         frontend_url_env = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
         # Use provided frontend_url if available, otherwise fall back to env var
         base_url = frontend_url if frontend_url else frontend_url_env
-        if not smtp_user or not smtp_password:
-            error_msg = "❌ SMTP credentials not configured. Email cannot be sent."
-            print(error_msg)
-            print(f"   Missing: SMTP_USER={bool(smtp_user)}, SMTP_PASSWORD={bool(smtp_password)}")
-            print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
+        
+        print(f"📧 [EMAIL] Attempting to send email to: {email}")
+        print(f"📧 [EMAIL] RESEND_API_KEY set: {bool(resend_api_key)}")
+        print(f"📧 [EMAIL] FROM_EMAIL: {from_email}")
+        
+        if not resend_api_key:
+            print("❌ [EMAIL] RESEND_API_KEY not configured!")
             print(f"📧 Debug: Reset link would be: {base_url}/reset-password?token={token}")
             return False
         
-        if not base_url or base_url == "http://localhost:5173":
-            print(f"⚠️  Warning: FRONTEND_URL is set to localhost. This will not work in production.")
-            print(f"   Current URL: {base_url}")
-        
+        resend.api_key = resend_api_key
         reset_link = f"{base_url}/reset-password?token={token}"
         
         # HTML version
@@ -104,36 +55,19 @@ async def send_password_reset_email(email: str, token: str, name: str, frontend_
         </html>
         """
         
-        # Text version
-        text = f"""
-Password Reset Request
-
-Hi {name},
-
-We received a request to reset your password for your AttendX account.
-
-Click the link below to reset your password:
-{reset_link}
-
-This link will expire in 1 hour.
-If you didn't request this, please ignore this email.
-        """
+        print(f"📧 [EMAIL] Sending via Resend API...")
         
-        # Run email sending in thread pool to avoid blocking the event loop
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            _email_executor,
-            _send_email_sync,
-            email,
-            "Password Reset Request - AttendX",
-            html,
-            text
-        )
+        params = {
+            "from": from_email,
+            "to": [email],
+            "subject": "Password Reset Request - AttendX",
+            "html": html,
+        }
         
-        if result:
-            print(f"✅ Password reset email sent to {email}")
-        return result
+        response = resend.Emails.send(params)
+        print(f"✅ [EMAIL] Email sent successfully! Response: {response}")
+        return True
         
     except Exception as e:
-        print(f"❌ Failed to send email: {str(e)}")
+        print(f"❌ [EMAIL] Failed to send email: {type(e).__name__}: {str(e)}")
         return False

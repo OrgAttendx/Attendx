@@ -199,10 +199,14 @@ async def forgot_password(request: ForgotPasswordRequest):
             "message": "If the email exists, a reset link has been sent",
             "success": True
         }
-        
+    
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
+        import traceback
         print(f"[FORGOT_PASSWORD] ERROR: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to process request")
+        print(f"[FORGOT_PASSWORD] TRACEBACK: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
 
 
 @router.post("/reset-password")
