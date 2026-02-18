@@ -6,22 +6,22 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from concurrent.futures import ThreadPoolExecutor
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")  # Your Gmail address
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # Your Gmail app password
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-
 # Thread pool for blocking SMTP operations - prevents blocking the async event loop
 _email_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_sender")
 
 
 def _send_email_sync(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
     """Synchronous email sending - runs in a thread pool to avoid blocking"""
+    # Read env vars at call time so Lambda/production env vars are always picked up
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = SMTP_USER
+        msg["From"] = smtp_user
         msg["To"] = to_email
         
         part1 = MIMEText(text_content, "plain")
@@ -33,9 +33,9 @@ def _send_email_sync(to_email: str, subject: str, html_content: str, text_conten
         context = ssl.create_default_context()
         
         # Use timeout to prevent hanging indefinitely
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
             server.starttls(context=context)
-            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.login(smtp_user, smtp_password)
             server.send_message(msg)
         
         print(f"✅ Email sent to {to_email}")
@@ -56,13 +56,17 @@ def _send_email_sync(to_email: str, subject: str, html_content: str, text_conten
 async def send_password_reset_email(email: str, token: str, name: str, frontend_url: str = None) -> bool:
     """Send password reset email with verification link - non-blocking"""
     try:
+        # Read env vars at call time so Lambda/production env vars are always picked up
+        smtp_user = os.getenv("SMTP_USER")
+        smtp_password = os.getenv("SMTP_PASSWORD")
+        frontend_url_env = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
         # Use provided frontend_url if available, otherwise fall back to env var
-        base_url = frontend_url if frontend_url else FRONTEND_URL
-        if not SMTP_USER or not SMTP_PASSWORD:
+        base_url = frontend_url if frontend_url else frontend_url_env
+        if not smtp_user or not smtp_password:
             error_msg = "❌ SMTP credentials not configured. Email cannot be sent."
             print(error_msg)
-            print(f"   Missing: SMTP_USER={bool(SMTP_USER)}, SMTP_PASSWORD={bool(SMTP_PASSWORD)}")
-            print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
+            print(f"   Missing: SMTP_USER={bool(smtp_user)}, SMTP_PASSWORD={bool(smtp_password)}")
             print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
             print(f"📧 Debug: Reset link would be: {base_url}/reset-password?token={token}")
             return False
