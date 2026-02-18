@@ -35,16 +35,25 @@ const ForgotPassword = () => {
 
     try {
       const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      console.log("[ForgotPassword] API_URL:", API_URL);
+      console.log("[ForgotPassword] frontend_url:", window.location.origin);
+      console.log(
+        "[ForgotPassword] Sending request to:",
+        `${API_URL}/forgot-password`,
+      );
+
       const res = await fetch(`${API_URL}/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          email, 
-          frontend_url: window.location.origin 
+        body: JSON.stringify({
+          email,
+          frontend_url: window.location.origin,
         }),
       });
 
+      console.log("[ForgotPassword] Response status:", res.status);
       const data = await res.json();
+      console.log("[ForgotPassword] Response data:", data);
 
       if (res.ok) {
         setEmailSent(true);
@@ -56,7 +65,9 @@ const ForgotPassword = () => {
         setError(data.detail || "Failed to send reset email");
       }
     } catch (err) {
-      console.error("Forgot password error:", err);
+      console.error("[ForgotPassword] Network/fetch error:", err);
+      console.error("[ForgotPassword] Error name:", err.name);
+      console.error("[ForgotPassword] Error message:", err.message);
       setError("Could not connect to server");
       toast({
         title: "Error",

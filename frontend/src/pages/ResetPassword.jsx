@@ -82,6 +82,13 @@ const ResetPassword = () => {
 
     try {
       const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      console.log("[ResetPassword] API_URL:", API_URL);
+      console.log("[ResetPassword] Token present:", !!token);
+      console.log(
+        "[ResetPassword] Sending request to:",
+        `${API_URL}/reset-password`,
+      );
+
       const res = await fetch(`${API_URL}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,7 +98,9 @@ const ResetPassword = () => {
         }),
       });
 
+      console.log("[ResetPassword] Response status:", res.status);
       const data = await res.json();
+      console.log("[ResetPassword] Response data:", data);
 
       if (res.ok) {
         setSuccess(true);
@@ -109,7 +118,9 @@ const ResetPassword = () => {
         });
       }
     } catch (err) {
-      console.error("Reset password error:", err);
+      console.error("[ResetPassword] Network/fetch error:", err);
+      console.error("[ResetPassword] Error name:", err.name);
+      console.error("[ResetPassword] Error message:", err.message);
       setError("Could not connect to server");
     } finally {
       setIsLoading(false);
