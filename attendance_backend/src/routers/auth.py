@@ -190,6 +190,10 @@ async def forgot_password(request: ForgotPasswordRequest):
         
         if not email_sent:
             print(f"⚠️  Failed to send reset email to {user['email']}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send reset email. Please check SMTP configuration on the server."
+            )
         
         return {
             "message": "If the email exists, a reset link has been sent",
