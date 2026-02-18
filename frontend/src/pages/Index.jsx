@@ -447,7 +447,7 @@ const Index = () => {
               <span className="text-lg font-semibold">AttendX</span>
             </div>
             <p className="text-muted-foreground text-sm">
-              © 2026 AttendX. Built for modern educational institutions.
+              &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
             </p>
             <div className="flex gap-6 text-sm text-muted-foreground">
               <a href="#" className="hover:text-foreground transition-colors">

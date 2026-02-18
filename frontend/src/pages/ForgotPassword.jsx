@@ -115,6 +115,9 @@ const ForgotPassword = () => {
             </Button>
           </CardContent>
         </Card>
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+        </p>
       </div>
     );
   }
@@ -198,6 +201,9 @@ const ForgotPassword = () => {
             </form>
           </CardContent>
         </Card>
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+        </p>
       </div>
     </div>
   );

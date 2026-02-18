@@ -87,8 +87,8 @@ const AttendanceCalendar = ({
           status === "present"
             ? "bg-green-500 text-white shadow-sm"
             : status === "absent"
-            ? "bg-red-500 text-white shadow-sm"
-            : "bg-muted/50 text-muted-foreground"
+              ? "bg-red-500 text-white shadow-sm"
+              : "bg-muted/50 text-muted-foreground"
         }`}
       >
         <span className={counts ? "text-[10px] sm:text-xs" : ""}>{day}</span>
@@ -97,7 +97,7 @@ const AttendanceCalendar = ({
             {counts.present}/{counts.total}
           </span>
         )}
-      </div>
+      </div>,
     );
 
     if (week.length === 7 || day === daysInMonth) {
@@ -108,7 +108,7 @@ const AttendanceCalendar = ({
       weeks.push(
         <div key={`week-${day}`} className="grid grid-cols-7 gap-1 sm:gap-2">
           {week}
-        </div>
+        </div>,
       );
       week = [];
     }
@@ -236,7 +236,7 @@ const StudentDashboard = () => {
               section: cls.section || "",
             };
           }
-        })
+        }),
       );
 
       setEnrolledClasses(classesWithDetails);
@@ -307,7 +307,7 @@ const StudentDashboard = () => {
       records.forEach((record) => {
         const date = new Date(record.start_time || record.recorded_at); // Use session start time if available
         if (isNaN(date.getTime())) return;
-        
+
         const year = date.getFullYear();
         const month = date.getMonth() + 1; // 1-12
         const day = date.getDate();
@@ -341,7 +341,7 @@ const StudentDashboard = () => {
       console.log("[StudentDashboard] Calendar by month:", calendarByMonth);
       console.log(
         "[StudentDashboard] Session counts by month:",
-        sessionCountsByMonth
+        sessionCountsByMonth,
       );
 
       setAttendanceRecords({
@@ -351,8 +351,12 @@ const StudentDashboard = () => {
       });
       // DEBUG:
       console.log("Records received:", records);
-      if(records.length > 0) {
-        console.log("First record time:", records[0].start_time, records[0].marked_at);
+      if (records.length > 0) {
+        console.log(
+          "First record time:",
+          records[0].start_time,
+          records[0].marked_at,
+        );
       }
     } catch (error) {
       console.error("[StudentDashboard] Error fetching attendance:", error);
@@ -393,7 +397,7 @@ const StudentDashboard = () => {
       const response = await attendanceApi.submitAttendanceCode(
         user.user_id,
         finalCode,
-        studentLocation
+        studentLocation,
       );
 
       // Show detailed success message
@@ -401,11 +405,11 @@ const StudentDashboard = () => {
       if (response.distance !== null && response.distance !== undefined) {
         if (response.within_radius) {
           description = `✓ You are within the classroom radius (${Math.round(
-            response.distance
+            response.distance,
           )}m away). Attendance marked as PRESENT.`;
         } else {
           description = `✗ You are outside the classroom radius (${Math.round(
-            response.distance
+            response.distance,
           )}m away). Marked as ABSENT.`;
         }
       } else if (studentLocation) {
@@ -453,7 +457,7 @@ const StudentDashboard = () => {
   // Calculate stats
   const totalSessions = enrolledClasses.reduce(
     (sum, c) => sum + (c.sessionsCount || 0),
-    0
+    0,
   );
   const avgAttendance =
     enrolledClasses.length > 0
@@ -507,7 +511,7 @@ const StudentDashboard = () => {
                   Join a Class
                 </DialogTitle>
                 <DialogDescription className="text-sm text-muted-foreground">
-                   Enter the code provided by your faculty to join a class.
+                  Enter the code provided by your faculty to join a class.
                 </DialogDescription>
               </DialogHeader>
 
@@ -555,8 +559,8 @@ const StudentDashboard = () => {
                 >
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleJoinClass} 
+                <Button
+                  onClick={handleJoinClass}
                   className="h-10 sm:h-11"
                   disabled={isJoiningClass}
                 >
@@ -565,7 +569,9 @@ const StudentDashboard = () => {
                       <Loader className="h-4 w-4 animate-spin" />
                       Joining...
                     </span>
-                  ) : "Join"}
+                  ) : (
+                    "Join"
+                  )}
                 </Button>
               </div>
             </DialogContent>
@@ -642,8 +648,8 @@ const StudentDashboard = () => {
                           c.attendanceRate >= 75
                             ? "default"
                             : c.attendanceRate >= 50
-                            ? "secondary"
-                            : "destructive"
+                              ? "secondary"
+                              : "destructive"
                         }
                         className={`text-xs font-semibold ${
                           c.attendanceRate >= 75 ? "bg-green-600" : ""
@@ -746,7 +752,7 @@ const StudentDashboard = () => {
                           <CardTitle className="text-xl sm:text-2xl text-green-600">
                             {attendanceRecords.records?.filter(
                               (r) =>
-                                r.status === "PRESENT" || r.status === "LATE"
+                                r.status === "PRESENT" || r.status === "LATE",
                             ).length || 0}
                           </CardTitle>
                         </CardHeader>
@@ -759,7 +765,7 @@ const StudentDashboard = () => {
                           </CardDescription>
                           <CardTitle className="text-xl sm:text-2xl text-red-600">
                             {attendanceRecords.records?.filter(
-                              (r) => r.status === "ABSENT"
+                              (r) => r.status === "ABSENT",
                             ).length || 0}
                           </CardTitle>
                         </CardHeader>
@@ -776,10 +782,10 @@ const StudentDashboard = () => {
                                   (attendanceRecords.records.filter(
                                     (r) =>
                                       r.status === "PRESENT" ||
-                                      r.status === "LATE"
+                                      r.status === "LATE",
                                   ).length /
                                     attendanceRecords.records.length) *
-                                    100
+                                    100,
                                 )
                               : 0}
                             %
@@ -828,7 +834,7 @@ const StudentDashboard = () => {
                                   <div>
                                     <p className="font-medium">
                                       {new Date(
-                                        record.start_time || record.recorded_at
+                                        record.start_time || record.recorded_at,
                                       ).toLocaleDateString("en-US", {
                                         weekday: "long",
                                         year: "numeric",
@@ -838,7 +844,7 @@ const StudentDashboard = () => {
                                     </p>
                                     <p className="text-sm text-muted-foreground">
                                       {new Date(
-                                        record.start_time || record.recorded_at
+                                        record.start_time || record.recorded_at,
                                       ).toLocaleTimeString("en-US", {
                                         hour: "2-digit",
                                         minute: "2-digit",
@@ -851,8 +857,8 @@ const StudentDashboard = () => {
                                     record.status === "PRESENT"
                                       ? "default"
                                       : record.status === "LATE"
-                                      ? "secondary"
-                                      : "destructive"
+                                        ? "secondary"
+                                        : "destructive"
                                   }
                                 >
                                   {record.status}
@@ -958,6 +964,9 @@ const StudentDashboard = () => {
           </DialogContent>
         </Dialog>
       </div>
+      <p className="text-center text-xs text-muted-foreground py-6">
+        &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+      </p>
     </div>
   );
 };

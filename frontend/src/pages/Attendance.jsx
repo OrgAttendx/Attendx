@@ -201,6 +201,9 @@ const Attendance = () => {
           <LocationCheck classId={classId} sessionId={sessionId} />
         </TabsContent> */}
       </Tabs>
+      <p className="text-center text-xs text-muted-foreground py-6">
+        &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+      </p>
     </div>
   );
 };

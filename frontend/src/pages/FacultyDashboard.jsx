@@ -85,8 +85,8 @@ const ClassCard = ({
                   status === "active"
                     ? "default"
                     : status === "ended"
-                    ? "secondary"
-                    : "outline"
+                      ? "secondary"
+                      : "outline"
                 }
                 className={
                   status === "active"
@@ -178,10 +178,10 @@ const ClassCard = ({
             {startingSession
               ? "Starting..."
               : status === "active"
-              ? "Go to Attendance"
-              : status === "ended"
-              ? "Start New Session"
-              : "Start Session"}
+                ? "Go to Attendance"
+                : status === "ended"
+                  ? "Start New Session"
+                  : "Start Session"}
           </Button>
           <div className="flex gap-2">
             <Button
@@ -279,7 +279,7 @@ const FacultyDashboard = () => {
         const apiClasses = await facultyAPI.getClasses();
         // Enrich each class with dynamic stats in parallel
         const enriched = await Promise.all(
-          (apiClasses || []).map((c) => enrichClassWithStats(c))
+          (apiClasses || []).map((c) => enrichClassWithStats(c)),
         );
         setClasses(enriched);
 
@@ -289,7 +289,7 @@ const FacultyDashboard = () => {
           const API_URL =
             import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
           const res = await fetch(
-            `${API_URL}/api/faculty/sessions/active?faculty_id=${user.user_id}`
+            `${API_URL}/api/faculty/sessions/active?faculty_id=${user.user_id}`,
           );
           if (res.ok) {
             const activeSessionsData = await res.json();
@@ -381,7 +381,7 @@ const FacultyDashboard = () => {
     try {
       setStartingSession(true);
       console.log(
-        `[FacultyDashboard] Starting session for class_id=${classToStart.class_id}`
+        `[FacultyDashboard] Starting session for class_id=${classToStart.class_id}`,
       );
 
       let locationData = null;
@@ -396,12 +396,12 @@ const FacultyDashboard = () => {
 
       const session = await facultyAPI.startSession(
         classToStart.class_id,
-        locationData
+        locationData,
       );
       const sessionId = session.session_id;
 
       console.log(
-        `[FacultyDashboard] Session created: session_id=${sessionId}`
+        `[FacultyDashboard] Session created: session_id=${sessionId}`,
       );
 
       if (!sessionId) throw new Error("Invalid session response");
@@ -472,7 +472,7 @@ const FacultyDashboard = () => {
       // Always fetch from backend to ensure we have the latest active session
       const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const res = await fetch(
-        `${API_URL}/class/${classItem.class_id}/active-session`
+        `${API_URL}/class/${classItem.class_id}/active-session`,
       );
 
       if (!res.ok) {
@@ -498,7 +498,7 @@ const FacultyDashboard = () => {
         }
 
         navigate(
-          `/attendance/${classItem.class_id}?sessionId=${data.session_id}`
+          `/attendance/${classItem.class_id}?sessionId=${data.session_id}`,
         );
       } else {
         throw new Error("No active session found for this class");
@@ -519,7 +519,7 @@ const FacultyDashboard = () => {
     try {
       await facultyAPI.deleteClass(classItem.class_id);
       setClasses((prev) =>
-        prev.filter((cls) => cls.class_id !== classItem.class_id)
+        prev.filter((cls) => cls.class_id !== classItem.class_id),
       );
       toast({
         title: "Class Deleted",
@@ -541,25 +541,25 @@ const FacultyDashboard = () => {
   };
 
   const filteredClasses = classes.filter((cls) =>
-    cls.class_name.toLowerCase().includes(searchTerm.toLowerCase())
+    cls.class_name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const activeClasses = filteredClasses.filter(
     (cls) =>
       sessions[cls.class_id]?.status === "active" &&
-      !endedClassIds.includes(cls.class_id)
+      !endedClassIds.includes(cls.class_id),
   );
   const endedClasses = filteredClasses.filter(
     (cls) =>
       sessions[cls.class_id]?.status === "ended" ||
-      endedClassIds.includes(cls.class_id)
+      endedClassIds.includes(cls.class_id),
   );
   const scheduledClasses = filteredClasses.filter(
     (cls) =>
       (!sessions[cls.class_id] ||
         (sessions[cls.class_id]?.status !== "active" &&
           sessions[cls.class_id]?.status !== "ended")) &&
-      !endedClassIds.includes(cls.class_id)
+      !endedClassIds.includes(cls.class_id),
   );
 
   return (
@@ -730,7 +730,7 @@ const FacultyDashboard = () => {
                   <p className="text-xl sm:text-2xl font-bold">
                     {classes.reduce(
                       (sum, c) => sum + (c.students_count || 0),
-                      0
+                      0,
                     )}
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
@@ -750,7 +750,7 @@ const FacultyDashboard = () => {
                   <p className="text-xl sm:text-2xl font-bold">
                     {classes.reduce(
                       (sum, c) => sum + (c.sessions_count || 0),
-                      0
+                      0,
                     )}
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
@@ -1015,6 +1015,9 @@ const FacultyDashboard = () => {
           </div>
         </DialogContent>
       </Dialog>
+      <p className="text-center text-xs text-muted-foreground py-6">
+        &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+      </p>
     </div>
   );
 };

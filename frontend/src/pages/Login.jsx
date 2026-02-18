@@ -264,6 +264,9 @@ const Login = () => {
         <p className="text-center text-xs text-muted-foreground mt-6">
           By signing in, you agree to our Terms of Service and Privacy Policy
         </p>
+        <p className="text-center text-xs text-muted-foreground mt-2">
+          &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+        </p>
       </div>
     </div>
   );
