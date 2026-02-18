@@ -1,7 +1,10 @@
 import smtplib
+import ssl
 import os
+import asyncio
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from concurrent.futures import ThreadPoolExecutor
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -9,9 +12,49 @@ SMTP_USER = os.getenv("SMTP_USER")  # Your Gmail address
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # Your Gmail app password
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+# Thread pool for blocking SMTP operations - prevents blocking the async event loop
+_email_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_sender")
+
+
+def _send_email_sync(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
+    """Synchronous email sending - runs in a thread pool to avoid blocking"""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = SMTP_USER
+        msg["To"] = to_email
+        
+        part1 = MIMEText(text_content, "plain")
+        part2 = MIMEText(html_content, "html")
+        msg.attach(part1)
+        msg.attach(part2)
+        
+        # Create SSL context for secure connection
+        context = ssl.create_default_context()
+        
+        # Use timeout to prevent hanging indefinitely
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
+            server.starttls(context=context)
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.send_message(msg)
+        
+        print(f"✅ Email sent to {to_email}")
+        return True
+        
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ SMTP Authentication failed: {str(e)}")
+        print("   Make sure you're using a Gmail App Password, not your regular password.")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"❌ SMTP error: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"❌ Failed to send email: {str(e)}")
+        return False
+
 
 async def send_password_reset_email(email: str, token: str, name: str) -> bool:
-    """Send password reset email with verification link"""
+    """Send password reset email with verification link - non-blocking"""
     try:
         if not SMTP_USER or not SMTP_PASSWORD:
             error_msg = "❌ SMTP credentials not configured. Email cannot be sent."
@@ -19,8 +62,6 @@ async def send_password_reset_email(email: str, token: str, name: str) -> bool:
             print(f"   Missing: SMTP_USER={bool(SMTP_USER)}, SMTP_PASSWORD={bool(SMTP_PASSWORD)}")
             print(f"   Set SMTP_USER and SMTP_PASSWORD environment variables in your deployment.")
             print(f"📧 Debug: Reset link would be: {FRONTEND_URL}/reset-password?token={token}")
-            # Return False to indicate email was not sent, but don't raise exception
-            # to avoid exposing this to users (security best practice)
             return False
         
         if not FRONTEND_URL or FRONTEND_URL == "http://localhost:5173":
@@ -28,12 +69,6 @@ async def send_password_reset_email(email: str, token: str, name: str) -> bool:
             print(f"   Current FRONTEND_URL: {FRONTEND_URL}")
         
         reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-        
-        # Create email
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Password Reset Request - AttendX"
-        msg["From"] = SMTP_USER
-        msg["To"] = email
         
         # HTML version
         html = f"""
@@ -77,19 +112,20 @@ This link will expire in 1 hour.
 If you didn't request this, please ignore this email.
         """
         
-        part1 = MIMEText(text, "plain")
-        part2 = MIMEText(html, "html")
-        msg.attach(part1)
-        msg.attach(part2)
+        # Run email sending in thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _email_executor,
+            _send_email_sync,
+            email,
+            "Password Reset Request - AttendX",
+            html,
+            text
+        )
         
-        # Send email
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.send_message(msg)
-        
-        print(f"✅ Password reset email sent to {email}")
-        return True
+        if result:
+            print(f"✅ Password reset email sent to {email}")
+        return result
         
     except Exception as e:
         print(f"❌ Failed to send email: {str(e)}")
