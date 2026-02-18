@@ -1,6 +1,13 @@
 import React, { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Lock, Eye, EyeOff, CheckCircle, GraduationCap, AlertCircle } from "lucide-react";
+import {
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle,
+  GraduationCap,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/enhanced-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +52,10 @@ const ResetPassword = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => navigate("/forgot-password")} className="w-full">
+            <Button
+              onClick={() => navigate("/forgot-password")}
+              className="w-full"
+            >
               Request New Reset Link
             </Button>
           </CardContent>
@@ -158,13 +168,18 @@ const ResetPassword = () => {
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
+                <Alert
+                  variant="destructive"
+                  className="animate-in fade-in slide-in-from-top-2"
+                >
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="newPassword" className="text-sm font-medium">New Password</Label>
+                <Label htmlFor="newPassword" className="text-sm font-medium">
+                  New Password
+                </Label>
                 <div className="relative group">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                   <Input
@@ -191,7 +206,12 @@ const ResetPassword = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password</Label>
+                <Label
+                  htmlFor="confirmPassword"
+                  className="text-sm font-medium"
+                >
+                  Confirm Password
+                </Label>
                 <div className="relative group">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                   <Input
@@ -211,9 +231,9 @@ const ResetPassword = () => {
                 Password must be at least 6 characters long
               </p>
 
-              <Button 
-                type="submit" 
-                className="w-full h-11 sm:h-12 font-semibold rounded-xl shadow-lg" 
+              <Button
+                type="submit"
+                className="w-full h-11 sm:h-12 font-semibold rounded-xl shadow-lg"
                 disabled={isLoading}
               >
                 {isLoading ? (

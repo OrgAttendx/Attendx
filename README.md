@@ -4,6 +4,8 @@ A web application for managing student attendance using QR codes and location-ba
 
 ## Features
 
+- User authentication with JWT tokens
+- **Password reset via email** (forgot password feature)
 - Faculty can create and manage classes
 - Generate QR codes for attendance
 - Location-based attendance verification
@@ -15,7 +17,6 @@ A web application for managing student attendance using QR codes and location-ba
 - Comprehensive attendance history and statistics
 
 - **Faculty Features**
-
   - Create and manage classes
   - Generate unique join codes for classes
   - Start/end attendance sessions
@@ -178,8 +179,10 @@ facul-student-hub/
 
 ### Authentication
 
-- POST `/api/auth/login` - User login
-- GET `/api/auth/me` - Get current user
+- POST `/login` - User login
+- POST `/register` - User registration
+- POST `/forgot-password` - Request password reset email
+- POST `/reset-password` - Reset password with token
 
 ### Faculty Routes
 
@@ -194,11 +197,19 @@ facul-student-hub/
 - POST `/api/student/classes/join` - Join a class using code
 - POST `/api/student/attendance` - Mark attendance
 
+## Documentation
+
+Detailed documentation available in the `/docs` folder:
+
+- [Architecture](docs/ARCHITECTURE.md) - System architecture and design
+- [Deployment](docs/DEPLOYMENT.md) - Deployment guide
+- [Features](docs/FEATURES.md) - Feature documentation
+- [User Manual](docs/USER_MANUAL.md) - User guide
+- [Forgot Password Implementation](docs/FORGOT_PASSWORD_IMPLEMENTATION.md) - Password reset feature details
+
 ## Development
 
 ### Directory Structure Details
-
-
 
 ### Available Scripts
 
@@ -206,8 +217,6 @@ facul-student-hub/
 - `python -m uvicorn main:app --reload` - Start the backend server
 - `npm run build` - Build frontend for production
 - `npm run preview` - Preview production build
-
-
 
 ## Deployment
 

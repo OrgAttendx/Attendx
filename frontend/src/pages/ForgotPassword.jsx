@@ -81,7 +81,8 @@ const ForgotPassword = () => {
             </div>
             <CardTitle className="text-2xl">Check Your Email</CardTitle>
             <CardDescription>
-              We've sent password reset instructions to <strong className="text-foreground">{email}</strong>
+              We've sent password reset instructions to{" "}
+              <strong className="text-foreground">{email}</strong>
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -130,13 +131,18 @@ const ForgotPassword = () => {
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
+                <Alert
+                  variant="destructive"
+                  className="animate-in fade-in slide-in-from-top-2"
+                >
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email Address
+                </Label>
                 <div className="relative group">
                   <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                   <Input
@@ -151,9 +157,9 @@ const ForgotPassword = () => {
                 </div>
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full h-11 sm:h-12 font-semibold rounded-xl shadow-lg" 
+              <Button
+                type="submit"
+                className="w-full h-11 sm:h-12 font-semibold rounded-xl shadow-lg"
                 disabled={isLoading}
               >
                 {isLoading ? (
