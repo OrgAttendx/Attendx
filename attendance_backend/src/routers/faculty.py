@@ -299,6 +299,30 @@ async def get_sessions_by_date_endpoint(class_id: int, date: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/faculty/classes/{class_id}/sessions/stats")
+async def get_class_sessions_stats(class_id: int):
+    """Return total sessions and latest session start time for a class."""
+    try:
+        sql = text(
+            """
+            SELECT
+                COUNT(*)::int AS sessions_count,
+                MAX(start_time) AS last_session
+            FROM attendance_sessions
+            WHERE class_id = :class_id
+            """
+        )
+
+        async with engine.connect() as conn:
+            result = await conn.execute(sql, {"class_id": class_id})
+            row = result.fetchone()
+            if not row:
+                return {"sessions_count": 0, "last_session": None}
+            return dict(row._mapping)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/sessions/{date}")
 async def sessions_by_date(date: str):
     return await queries.get_sessions_by_date(date)

@@ -125,7 +125,7 @@ async def submit_code(payload: SubmitAttendanceCode):
             class_id = session.class_id
             session_lat = session.latitude
             session_lon = session.longitude
-            radius_meters = session.radius_meters or 50
+            radius_meters = session.radius_meters or 500
             
             # Check enrollment
             sql_enroll = text("SELECT 1 FROM class_enrollments WHERE student_id = :sid AND class_id = :cid")

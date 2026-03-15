@@ -242,7 +242,7 @@ const FacultyDashboard = () => {
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [classToStart, setClassToStart] = useState(null);
   const [sessionLocation, setSessionLocation] = useState(null);
-  const [radiusMeters, setRadiusMeters] = useState(50);
+  const [radiusMeters, setRadiusMeters] = useState(500);
 
   // Helper: enrich a class with dynamic stats (students count, sessions count, last session time)
   const enrichClassWithStats = async (cls) => {
@@ -252,8 +252,7 @@ const FacultyDashboard = () => {
       const students_count = Array.isArray(students) ? students.length : 0;
 
       // Authoritative sessions stats from backend
-      // const stats = await facultyAPI.getClassSessionsStats(cls.class_id);
-      const stats = {}; // Placeholder until endpoint exists
+      const stats = await facultyAPI.getClassSessionsStats(cls.class_id);
       const sessions_count = stats?.sessions_count ?? 0;
       const last_session = stats?.last_session
         ? new Date(stats.last_session).toLocaleString()
@@ -445,7 +444,7 @@ const FacultyDashboard = () => {
     if (!classToEnd) return;
 
     try {
-      const activeSession = sessions[classToEnd.class_id];
+      const activeSession = mergedSessions[classToEnd.class_id];
       if (!activeSession?.sessionId) throw new Error("No active session found");
       await facultyAPI.endSession(classToEnd.class_id, activeSession.sessionId);
       endSession(classToEnd.class_id);
@@ -483,7 +482,7 @@ const FacultyDashboard = () => {
 
       if (data.session_id) {
         // Update context with the active session info
-        if (!sessions[classItem.class_id]?.sessionId) {
+        if (!mergedSessions[classItem.class_id]?.sessionId) {
           const newSessions = {
             ...sessions,
             [classItem.class_id]: {
@@ -546,19 +545,19 @@ const FacultyDashboard = () => {
 
   const activeClasses = filteredClasses.filter(
     (cls) =>
-      sessions[cls.class_id]?.status === "active" &&
+      mergedSessions[cls.class_id]?.status === "active" &&
       !endedClassIds.includes(cls.class_id),
   );
   const endedClasses = filteredClasses.filter(
     (cls) =>
-      sessions[cls.class_id]?.status === "ended" ||
+      mergedSessions[cls.class_id]?.status === "ended" ||
       endedClassIds.includes(cls.class_id),
   );
   const scheduledClasses = filteredClasses.filter(
     (cls) =>
-      (!sessions[cls.class_id] ||
-        (sessions[cls.class_id]?.status !== "active" &&
-          sessions[cls.class_id]?.status !== "ended")) &&
+      (!mergedSessions[cls.class_id] ||
+        (mergedSessions[cls.class_id]?.status !== "active" &&
+          mergedSessions[cls.class_id]?.status !== "ended")) &&
       !endedClassIds.includes(cls.class_id),
   );
 
@@ -828,7 +827,10 @@ const FacultyDashboard = () => {
                 <ClassCard
                   key={classItem.class_id}
                   classItem={classItem}
-                  status={getSessionStatus(classItem.class_id)}
+                  status={
+                    mergedSessions[classItem.class_id]?.status ||
+                    getSessionStatus(classItem.class_id)
+                  }
                   onViewDetails={handleViewDetails}
                   onDelete={handleDeleteClass}
                   onEndSession={handleEndSession}
@@ -946,7 +948,7 @@ const FacultyDashboard = () => {
                   <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-3">
                     <Label htmlFor="radius">Allowed Radius (meters)</Label>
                     <div className="flex flex-wrap gap-2">
-                      {[20, 30, 50, 75, 100, 150, 200].map((r) => (
+                      {[500, 1000, 1500, 2000, 2500].map((r) => (
                         <Button
                           key={r}
                           type="button"
@@ -966,13 +968,17 @@ const FacultyDashboard = () => {
                       <Input
                         id="radius"
                         type="number"
-                        min="5"
-                        max="1000"
+                        min="500"
+                        max="10000"
+                        step="500"
                         value={radiusMeters}
                         onChange={(e) => {
                           const val = parseInt(e.target.value, 10);
-                          if (!isNaN(val) && val >= 5 && val <= 1000) {
-                            setRadiusMeters(val);
+                          if (!isNaN(val)) {
+                            const roundedVal = Math.round(val / 500) * 500;
+                            if (roundedVal >= 500 && roundedVal <= 10000) {
+                              setRadiusMeters(roundedVal);
+                            }
                           }
                         }}
                         className="w-24"

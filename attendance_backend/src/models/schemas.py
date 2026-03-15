@@ -45,7 +45,7 @@ class StartSessionRequest(BaseModel):
     class_id: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    radius_meters: Optional[int] = 50
+    radius_meters: Optional[int] = 500
 
 
 class ForgotPasswordRequest(BaseModel):

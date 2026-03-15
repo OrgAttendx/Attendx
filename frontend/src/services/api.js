@@ -57,19 +57,19 @@ export const facultyAPI = {
     if (locationData) {
       payload.latitude = locationData.latitude;
       payload.longitude = locationData.longitude;
-      payload.radius_meters = locationData.radius_meters || 50;
+      payload.radius_meters = locationData.radius_meters || 500;
     }
 
     const { data } = await api.post(
       `/faculty/classes/${class_id}/sessions`,
-      payload
+      payload,
     );
     return data;
   },
 
   async endSession(class_id, session_id) {
     const { data } = await api.put(
-      `/faculty/classes/${class_id}/sessions/${session_id}/end`
+      `/faculty/classes/${class_id}/sessions/${session_id}/end`,
     );
     return data;
   },
@@ -83,7 +83,7 @@ export const facultyAPI = {
   async getSessionsByDate(class_id, date) {
     const { data } = await api.get(
       `/faculty/classes/${class_id}/sessions/by-date`,
-      { params: { date } }
+      { params: { date } },
     );
     return data;
   },
@@ -91,7 +91,7 @@ export const facultyAPI = {
   /* ------------------ NEW — Session Attendance (Flat) ------------------ */
   async getSessionAttendanceFlat(session_id) {
     const { data } = await api.get(
-      `/faculty/sessions/${session_id}/attendance/flat`
+      `/faculty/sessions/${session_id}/attendance/flat`,
     );
     return data;
   },
@@ -116,17 +116,44 @@ export const facultyAPI = {
 
   // Authoritative sessions stats (count + last session start)
   async getClassSessionsStats(class_id) {
-    // const { data } = await api.get(
-    //   `/faculty/classes/${class_id}/sessions/stats`
-    // );
-    // return data;
-    return { sessions_count: 0, last_session: null };
+    try {
+      const { data } = await api.get(
+        `/faculty/classes/${class_id}/sessions/stats`,
+      );
+      return data;
+    } catch {
+      // Fallback for older backend versions: derive session stats from attendance rows.
+      const { data } = await api.get(`/faculty/classes/${class_id}/attendance`);
+      const rows = Array.isArray(data) ? data : [];
+      const sessionStarts = new Map();
+
+      rows.forEach((row) => {
+        if (!row?.session_id) return;
+        const existing = sessionStarts.get(row.session_id);
+        const current = row.start_time || null;
+        if (!existing && current) {
+          sessionStarts.set(row.session_id, current);
+        } else if (!existing) {
+          sessionStarts.set(row.session_id, null);
+        }
+      });
+
+      const last_session =
+        Array.from(sessionStarts.values())
+          .filter(Boolean)
+          .sort((a, b) => new Date(b) - new Date(a))[0] || null;
+
+      return {
+        sessions_count: sessionStarts.size,
+        last_session,
+      };
+    }
   },
 
   // Get all sessions with attendance data for export (optimized)
   async getAllSessionsWithAttendance(class_id) {
     const { data } = await api.get(
-      `/faculty/classes/${class_id}/sessions/all-with-attendance`
+      `/faculty/classes/${class_id}/sessions/all-with-attendance`,
     );
     return data;
   },
@@ -135,7 +162,7 @@ export const facultyAPI = {
   async getClassAttendanceByDate(class_id, date) {
     const { data } = await api.get(
       `/faculty/classes/${class_id}/attendance/by-date`,
-      { params: { date } }
+      { params: { date } },
     );
     return data;
   },
