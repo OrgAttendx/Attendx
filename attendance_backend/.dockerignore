@@ -1,0 +1,39 @@
+# Virtual Environments
+
+venv/
+.venv/
+
+# Python Cache & Config
+
+**pycache**/
+_.py[cod]
+_$py.class
+.pytest_cache/
+.coverage
+.tox/
+
+# Local Environment Variables
+
+.env
+.env.\*
+
+# Logs, Docs & Scripts
+
+error_log.txt
+docs/
+legacy/
+tests/
+sql/
+\*.md
+
+# Git & Docker
+
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+
+# Temporary Files
+
+requirements.txt
+req.txt
