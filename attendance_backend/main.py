@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 from src.core.config import FRONTEND_URL
-from src.routers import auth, faculty, student, notifications
+from src.routers import auth, faculty, student
 
 app = FastAPI(title="Attendance Management API")
 
@@ -28,7 +28,6 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(faculty.router)
 app.include_router(student.router)
-app.include_router(notifications.router)
 
 
 @app.get("/")

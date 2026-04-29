@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AttendanceProvider } from "@/contexts/AttendanceContext";
-import { NotificationProvider } from "@/contexts/NotificationContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
@@ -26,54 +25,52 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <NotificationProvider>
-            <AttendanceProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Sonner />
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                  <Route path="/register" element={<Register />} />
+          <AttendanceProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/register" element={<Register />} />
 
-                  {/* Faculty route */}
-                  <Route
-                    path="/faculty-dashboard"
-                    element={
-                      <ProtectedRoute role="FACULTY">
-                        <FacultyDashboard />
-                      </ProtectedRoute>
-                    }
-                  />
+                {/* Faculty route */}
+                <Route
+                  path="/faculty-dashboard"
+                  element={
+                    <ProtectedRoute role="FACULTY">
+                      <FacultyDashboard />
+                    </ProtectedRoute>
+                  }
+                />
 
-                  {/* Student route */}
-                  <Route
-                    path="/student-dashboard"
-                    element={
-                      <ProtectedRoute role="STUDENT">
-                        <StudentDashboard />
-                      </ProtectedRoute>
-                    }
-                  />
+                {/* Student route */}
+                <Route
+                  path="/student-dashboard"
+                  element={
+                    <ProtectedRoute role="STUDENT">
+                      <StudentDashboard />
+                    </ProtectedRoute>
+                  }
+                />
 
-                  {/* Attendance route */}
-                  <Route
-                    path="/attendance/:classId"
-                    element={
-                      <ProtectedRoute role="FACULTY">
-                        <Attendance />
-                      </ProtectedRoute>
-                    }
-                  />
+                {/* Attendance route */}
+                <Route
+                  path="/attendance/:classId"
+                  element={
+                    <ProtectedRoute role="FACULTY">
+                      <Attendance />
+                    </ProtectedRoute>
+                  }
+                />
 
-                  {/* If page not found */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </TooltipProvider>
-            </AttendanceProvider>
-          </NotificationProvider>
+                {/* If page not found */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </TooltipProvider>
+          </AttendanceProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

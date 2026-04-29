@@ -900,7 +900,6 @@ const FacultyDashboard = () => {
               <ul className="list-disc list-inside mt-2 space-y-1">
                 <li>Mark all unmarked students as absent</li>
                 <li>Close the session permanently</li>
-                <li>Send notifications to all students</li>
               </ul>
               You will still be able to view the attendance records, but no
               further attendance can be marked.

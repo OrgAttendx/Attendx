@@ -5,7 +5,6 @@ from src.core.database import engine
 from src.core.security import verify_password, get_password_hash, create_access_token, create_reset_token, create_reset_token_expiry
 from src.core.email import send_password_reset_email
 from src.models.schemas import LoginRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest
-from src.queries import create_notification
 
 router = APIRouter(tags=["auth"])
 
@@ -113,19 +112,6 @@ async def register(request: RegisterRequest):
             
             user = dict(result.fetchone()._mapping)
             print(f"[REGISTER] Successfully registered user_id={user['user_id']}")
-            
-            # Create welcome notification (needs separate transaction or fire-and-forget?)
-            # Since we are in an async function, we can just await it. 
-            # Note: create_notification manages its own connection/transaction.
-            # Ideally we should use the same connection, but create_notification is a standalone helper.
-            # Using standalone helper is safer to assume it works independently.
-            await create_notification(
-                user_id=user['user_id'],
-                type="welcome",
-                title="Welcome!",
-                message=f"Welcome to the Attendance Management System, {user['name']}!",
-                priority="low"
-            )
             
             return {
                 "message": "Registration successful",

@@ -293,7 +293,7 @@ const Index = () => {
                 icon: BookOpen,
                 title: "Student Portal",
                 description:
-                  "Easy class enrollment, attendance history, and real-time notifications.",
+                  "Easy class enrollment and attendance history in one place.",
                 color: "text-indigo-500",
                 bg: "bg-indigo-500/10",
               },

@@ -13,7 +13,6 @@ A web application for managing student attendance using QR codes and location-ba
 - Student dashboard for viewing attendance records
 - Protected routes and API endpoints
 - Persistent data storage in PostgreSQL database
-- Real-time notifications for session events
 - Comprehensive attendance history and statistics
 
 - **Faculty Features**
@@ -27,7 +26,6 @@ A web application for managing student attendance using QR codes and location-ba
   - Join classes using unique codes
   - Mark attendance using verification codes
   - View attendance history and statistics
-  - Real-time session notifications
 
 ## Tech Stack
 
@@ -53,11 +51,10 @@ A web application for managing student attendance using QR codes and location-ba
 - Class Enrollments
 - Attendance Sessions
 - Attendance Records
-- Notifications
 
 ### Storage Architecture
 
-- Database: Stores all persistent data including users, classes, attendance records, and notifications
+- Database: Stores all persistent data including users, classes, and attendance records
 - LocalStorage: Manages session data like authentication tokens
 
 ## Getting Started

@@ -12,7 +12,6 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/enhanced-button";
-import NotificationCenter from "@/components/NotificationCenter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,9 +60,6 @@ const Header = () => {
                 <Moon className="h-5 w-5 text-slate-600" />
               )}
             </Button>
-
-            {/* Notifications */}
-            <NotificationCenter />
 
             {/* User Menu */}
             <DropdownMenu>

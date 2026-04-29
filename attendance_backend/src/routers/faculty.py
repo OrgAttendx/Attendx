@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text, bindparam
 from src.core.database import engine
 from src.core.utils import generate_code
-from src.queries import create_notification
 from src.models.schemas import CreateClassRequest, StartSessionRequest, MarkAttendanceRequest
 from src import queries
 from datetime import datetime, timedelta
@@ -166,25 +165,6 @@ async def start_session(class_id: int, request: StartSessionRequest = None):
             class_row_data = class_row.fetchone()
             class_name = class_row_data[0] if class_row_data else "Unknown Class"
             
-            # Get enrolled students
-            students_sql = text("SELECT student_id FROM class_enrollments WHERE class_id = :cid")
-            students_result = await conn.execute(students_sql, {"cid": class_id})
-            students = students_result.fetchall()
-             
-            # Notifications (DISABLED)
-            # Doing this in loop async is fine for now, but batch insert is better.
-            # create_notification is atomic, so we just await it.
-            # for student in students:
-            #     await create_notification(
-            #         user_id=student[0],
-            #         type="session_start",
-            #         title="New Attendance Session",
-            #         message=f"{class_name} attendance session is now active. Code: {code}",
-            #         priority="high",
-            #         related_class_id=class_id,
-            #         related_session_id=session_id
-            #     )
-            
             return session_data
     except Exception as e:
         import traceback
@@ -237,31 +217,14 @@ async def end_session(class_id: int, session_id: int):
             if not row:
                 raise HTTPException(status_code=404, detail="Session not found")
             
-            # Stats & Notifications
+            # Stats
             try:
                 class_sql = text("SELECT class_name FROM classes WHERE class_id = :cid")
                 class_res = await conn.execute(class_sql, {"cid": class_id})
                 c_row = class_res.fetchone()
                 class_name = c_row[0] if c_row else "Unknown Class"
-                
-                students_sql = text("SELECT student_id, status FROM attendance_records WHERE session_id = :sid")
-                students = (await conn.execute(students_sql, {"sid": session_id})).fetchall()
-                
-                # for student in students:
-                #     sid, status = student[0], student[1]
-                #     msg = f"Your attendance has been marked as {status} for {class_name}" if status in ['PRESENT', 'LATE'] else f"You were marked absent for {class_name}"
-                #     # Fire and forget notifications to avoid blocking/failing the main request
-                #     await create_notification(
-                #         user_id=sid,
-                #         type="attendance_marked" if status in ['PRESENT', 'LATE'] else "attendance_absent",
-                #         title="Attendance Recorded" if status in ['PRESENT', 'LATE'] else "Marked Absent",
-                #         message=msg,
-                #         priority="low" if status in ['PRESENT', 'LATE'] else "medium",
-                #         related_class_id=class_id,
-                #         related_session_id=session_id
-                #     )
             except Exception as notify_ex:
-                print(f"[END_SESSION] Warning: Failed to send notifications: {notify_ex}")
+                print(f"[END_SESSION] Warning: failed stats lookup: {notify_ex}")
                 # Do not raise here, so the session is still closed successfully
 
             return dict(row._mapping)
@@ -474,20 +437,6 @@ async def mark_attendance_manual(session_id: int, payload: MarkAttendanceRequest
                     {"sid": session_id, "uid": payload.student_id, "st": status}
                  )
             
-            # Notification (DISABLED)
-            # class_info = (await conn.execute(
-            #     text("SELECT c.class_name FROM classes c JOIN attendance_sessions s ON c.class_id = s.class_id WHERE s.session_id = :sid"),
-            #     {"sid": session_id}
-            # )).fetchone()
-            
-            # if class_info:
-            #     await create_notification(
-            #         user_id=payload.student_id,
-            #         type="attendance_marked",
-            #         title="Attendance Updated",
-            #         message=f"Your attendance has been manually marked as {status} for {class_info[0]}",
-            #         priority="medium"
-            #     )
             return {"message": "Attendance updated", "status": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
