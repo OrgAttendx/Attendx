@@ -13,3 +13,7 @@ DB_URL = os.getenv("DB_URL")
 
 # CORS / Frontend
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+# Password Reset Admin Key
+RESET_ADMIN_KEY = os.getenv("RESET_ADMIN_KEY", "AttendX@Reset#2026")
+
