@@ -248,6 +248,7 @@ const FacultyDashboard = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [adminKey, setAdminKey] = useState("");
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
@@ -576,6 +577,7 @@ const FacultyDashboard = () => {
     setSelectedUser(user);
     setNewPassword("");
     setConfirmPassword("");
+    setAdminKey("");
     setShowNewPwd(false);
     setShowConfirmPwd(false);
   };
@@ -590,9 +592,13 @@ const FacultyDashboard = () => {
       toast({ title: "Validation Error", description: "Passwords do not match.", variant: "destructive" });
       return;
     }
+    if (!adminKey) {
+      toast({ title: "Validation Error", description: "Admin reset key is required.", variant: "destructive" });
+      return;
+    }
     try {
       setResettingPassword(true);
-      await facultyAPI.adminResetPassword(selectedUser.user_id, newPassword);
+      await facultyAPI.adminResetPassword(selectedUser.user_id, newPassword, adminKey);
       toast({
         title: "Password Reset",
         description: `Password for ${selectedUser.name} has been reset successfully.`,
@@ -600,6 +606,7 @@ const FacultyDashboard = () => {
       setSelectedUser(null);
       setNewPassword("");
       setConfirmPassword("");
+      setAdminKey("");
     } catch (err) {
       toast({
         title: "Error",
@@ -1271,10 +1278,24 @@ const FacultyDashboard = () => {
                     )}
                   </div>
 
+                  {/* Admin Reset Key */}
+                  <div className="space-y-1.5 pt-2 border-t border-border/40">
+                    <Label htmlFor="admin-key" className="text-sm font-medium text-orange-600">Admin Reset Key</Label>
+                    <Input
+                      id="admin-key"
+                      type="password"
+                      placeholder="Enter secret authorization key. To get password contact developer "
+                      value={adminKey}
+                      onChange={(e) => setAdminKey(e.target.value)}
+                      className="h-10 border-orange-500/30 focus-visible:ring-orange-500/50"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Required to authorize this password reset.</p>
+                  </div>
+
                   <Button
-                    className="w-full h-10 bg-orange-500 hover:bg-orange-600 text-white"
+                    className="w-full h-10 bg-orange-500 hover:bg-orange-600 text-white mt-4"
                     onClick={handleAdminResetPassword}
-                    disabled={resettingPassword || !newPassword || !confirmPassword}
+                    disabled={resettingPassword || !newPassword || !confirmPassword || !adminKey}
                   >
                     <KeyRound className="h-4 w-4 mr-2" />
                     {resettingPassword ? "Resetting…" : "Reset Password"}

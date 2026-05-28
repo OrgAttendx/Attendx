@@ -6,6 +6,8 @@ from src.models.schemas import CreateClassRequest, StartSessionRequest, MarkAtte
 from src import queries
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
+import os
+import secrets
 
 router = APIRouter(tags=["faculty"])
 
@@ -496,6 +498,21 @@ async def list_all_users():
 async def admin_reset_password(request: AdminResetPasswordRequest):
     """Faculty-only: directly reset any user's password (no email token required)."""
     try:
+        # Secure comparison of admin confirmation key
+        server_admin_key = os.getenv("RESET_ADMIN_KEY")
+        if not server_admin_key:
+            print("[ADMIN_RESET] SECURITY ALERT: RESET_ADMIN_KEY is not configured in the server environment!")
+            raise HTTPException(
+                status_code=500,
+                detail="Password reset is disabled: Admin reset key is not configured on the server."
+            )
+        
+        if not secrets.compare_digest(request.admin_key, server_admin_key):
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid admin reset key. Access denied."
+            )
+
         if len(request.new_password) < 6:
             raise HTTPException(
                 status_code=400,

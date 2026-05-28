@@ -173,10 +173,11 @@ export const facultyAPI = {
     return data;
   },
 
-  async adminResetPassword(user_id, new_password) {
+  async adminResetPassword(user_id, new_password, admin_key) {
     const { data } = await api.post(`/faculty/admin/reset-password`, {
       user_id,
       new_password,
+      admin_key,
     });
     return data;
   },

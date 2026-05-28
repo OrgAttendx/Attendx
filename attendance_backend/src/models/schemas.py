@@ -66,3 +66,4 @@ class DeleteAccountRequest(BaseModel):
 class AdminResetPasswordRequest(BaseModel):
     user_id: int
     new_password: str
+    admin_key: str
