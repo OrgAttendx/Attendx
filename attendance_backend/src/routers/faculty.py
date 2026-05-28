@@ -553,3 +553,99 @@ async def admin_reset_password(request: AdminResetPasswordRequest):
     except Exception as e:
         print(f"[ADMIN_RESET] ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/faculty/classes/{class_id}/sessions/all-with-attendance")
+async def get_all_sessions_with_attendance(class_id: int):
+    """
+    Get all sessions with their attendance records flat, optimized for a single export file.
+    """
+    try:
+        # 1. Fetch all sessions to ensure we return sessions even if they don't have enrollments/records
+        sessions_sql = text(
+            """
+            SELECT session_id, start_time, end_time, status, generated_code
+            FROM attendance_sessions
+            WHERE class_id = :class_id
+            ORDER BY start_time DESC
+            """
+        )
+        
+        # 2. Fetch all attendance records flat for the class sessions
+        records_sql = text(
+            """
+            SELECT 
+                s.session_id,
+                ce.student_id,
+                u.name as student_name,
+                ce.roll_number,
+                ce.section,
+                COALESCE(ar.status, 'ABSENT') as status,
+                ar.marked_at
+            FROM attendance_sessions s
+            JOIN class_enrollments ce ON s.class_id = ce.class_id
+            JOIN users u ON ce.student_id = u.user_id
+            LEFT JOIN attendance_records ar ON ar.session_id = s.session_id AND ar.student_id = ce.student_id
+            WHERE s.class_id = :class_id
+            ORDER BY ce.roll_number
+            """
+        )
+        
+        async with engine.connect() as conn:
+            sessions_res = await conn.execute(sessions_sql, {"class_id": class_id})
+            sessions_rows = [dict(r._mapping) for r in sessions_res]
+            
+            records_res = await conn.execute(records_sql, {"class_id": class_id})
+            records_rows = [dict(r._mapping) for r in records_res]
+            
+        # Group records by session_id
+        records_by_session = {}
+        for r in records_rows:
+            sid = r["session_id"]
+            if sid not in records_by_session:
+                records_by_session[sid] = []
+            
+            # Format marked_at to ISO string if exists
+            marked_at_str = r["marked_at"].isoformat() if r["marked_at"] else None
+            
+            records_by_session[sid].append({
+                "student_id": r["student_id"],
+                "student_name": r["student_name"],
+                "roll_number": r["roll_number"],
+                "section": r["section"],
+                "status": r["status"],
+                "marked_at": marked_at_str
+            })
+            
+        # Assemble sessions list
+        sessions_list = []
+        for s in sessions_rows:
+            sid = s["session_id"]
+            recs = records_by_session.get(sid, [])
+            
+            # Calculate totals (Late is also counted in totals if needed, but match present/late/absent)
+            present_count = sum(1 for r in recs if r["status"] == "PRESENT")
+            late_count = sum(1 for r in recs if r["status"] == "LATE")
+            absent_count = sum(1 for r in recs if r["status"] == "ABSENT")
+            
+            sessions_list.append({
+                "session_id": sid,
+                "start_time": s["start_time"].isoformat() if s["start_time"] else None,
+                "end_time": s["end_time"].isoformat() if s["end_time"] else None,
+                "status": s["status"],
+                "generated_code": s["generated_code"],
+                "records": recs,
+                "totals": {
+                    "present": present_count,
+                    "late": late_count,
+                    "absent": absent_count
+                }
+            })
+            
+        return {"sessions": sessions_list}
+    except Exception as e:
+        import traceback
+        print(f"[EXPORT_ALL_SESSIONS] ERROR: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
