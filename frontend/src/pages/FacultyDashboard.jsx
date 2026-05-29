@@ -240,6 +240,9 @@ const FacultyDashboard = () => {
   const [creatingClass, setCreatingClass] = useState(false); // Prevent double-click on create
   const [endSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
   const [classToEnd, setClassToEnd] = useState(null);
+  const [deleteClassDialogOpen, setDeleteClassDialogOpen] = useState(false);
+  const [classToDelete, setClassToDelete] = useState(null);
+  const [deletingClass, setDeletingClass] = useState(false);
 
   // Reset Password states
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
@@ -529,15 +532,22 @@ const FacultyDashboard = () => {
     }
   };
 
-  const handleDeleteClass = async (classItem) => {
+  const handleDeleteClass = (classItem) => {
+    setClassToDelete(classItem);
+    setDeleteClassDialogOpen(true);
+  };
+
+  const confirmDeleteClass = async () => {
+    if (!classToDelete) return;
     try {
-      await facultyAPI.deleteClass(classItem.class_id);
+      setDeletingClass(true);
+      await facultyAPI.deleteClass(classToDelete.class_id);
       setClasses((prev) =>
-        prev.filter((cls) => cls.class_id !== classItem.class_id),
+        prev.filter((cls) => cls.class_id !== classToDelete.class_id),
       );
       toast({
         title: "Class Deleted",
-        description: `${classItem.class_name} has been deleted.`,
+        description: `${classToDelete.class_name} has been deleted.`,
         variant: "destructive",
       });
     } catch (error) {
@@ -546,6 +556,10 @@ const FacultyDashboard = () => {
         description: error.message || "Failed to delete class",
         variant: "destructive",
       });
+    } finally {
+      setDeletingClass(false);
+      setDeleteClassDialogOpen(false);
+      setClassToDelete(null);
     }
   };
 
@@ -1002,6 +1016,36 @@ const FacultyDashboard = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               End Session
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Class Confirmation Dialog */}
+      <AlertDialog
+        open={deleteClassDialogOpen}
+        onOpenChange={setDeleteClassDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />
+              Delete Class?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to permanently delete <strong>{classToDelete?.class_name}</strong>?
+              <br /><br />
+              This action is <strong className="text-destructive">irreversible</strong> and will permanently delete all related attendance sessions, students' records, and classes' statistics.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingClass}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteClass}
+              disabled={deletingClass}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingClass ? "Deleting..." : "Delete Permanently"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
