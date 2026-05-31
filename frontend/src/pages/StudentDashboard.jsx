@@ -904,6 +904,19 @@ const StudentDashboard = () => {
                   Some sessions may require location verification. Capture your
                   location to ensure attendance is recorded correctly.
                 </p>
+
+                {/* GPS Tips Banner */}
+                <div className="flex gap-2.5 rounded-xl border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <span className="text-base leading-none shrink-0">📡</span>
+                  <div className="text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <p className="font-semibold">For accurate GPS:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-amber-700 dark:text-amber-400">
+                      <li>Turn <strong>Wi-Fi ON</strong> (no need to connect to any network)</li>
+                      <li>Turn <strong>Battery Saver OFF</strong></li>
+                    </ul>
+                  </div>
+                </div>
+
                 <LocationCapture
                   onLocationCaptured={handleLocationCaptured}
                   autoCapture={false}

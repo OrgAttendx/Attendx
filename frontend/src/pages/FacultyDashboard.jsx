@@ -1065,6 +1065,18 @@ const FacultyDashboard = () => {
 
             <div className="flex-1 overflow-y-auto px-4 pb-6 pt-2 sm:px-6">
               <div className="space-y-4 pb-4">
+                {/* GPS Tips Banner */}
+                <div className="flex gap-2.5 rounded-xl border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <span className="text-lg leading-none shrink-0">📡</span>
+                  <div className="text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <p className="font-semibold">For accurate location capture:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-amber-700 dark:text-amber-400">
+                      <li>Turn <strong>Wi-Fi ON</strong> (no need to connect to any network)</li>
+                      <li>Turn <strong>Battery Saver OFF</strong> for full GPS performance</li>
+                    </ul>
+                  </div>
+                </div>
+
                 <h3 className="font-medium">Location-Based Attendance</h3>
                 <p className="text-sm text-muted-foreground">
                   Enable location verification to ensure students are physically
