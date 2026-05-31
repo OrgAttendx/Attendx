@@ -765,7 +765,7 @@ const StudentDashboard = () => {
                           </CardDescription>
                           <CardTitle className="text-xl sm:text-2xl text-red-600">
                             {attendanceRecords.records?.filter(
-                              (r) => r.status === "ABSENT",
+                              (r) => r.status === "ABSENT" || !r.status,
                             ).length || 0}
                           </CardTitle>
                         </CardHeader>
@@ -861,7 +861,7 @@ const StudentDashboard = () => {
                                         : "destructive"
                                   }
                                 >
-                                  {record.status}
+                                  {record.status || "ABSENT"}
                                 </Badge>
                               </div>
                             ))}
