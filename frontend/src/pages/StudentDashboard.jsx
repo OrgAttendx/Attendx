@@ -401,10 +401,20 @@ const StudentDashboard = () => {
       );
 
       // Show detailed success message
-      const isPresent = response.status === "PRESENT";
-      let description = `Your attendance has been recorded as ${isPresent ? "PRESENT" : "ABSENT"}.`;
+      // Use response.status (the actual DB status) as the sole source of truth
+      console.log("[ATTENDANCE DEBUG] Full API response:", response);
+      console.log("[ATTENDANCE DEBUG] response.status:", response.status);
+      console.log("[ATTENDANCE DEBUG] response.within_radius:", response.within_radius);
+      console.log("[ATTENDANCE DEBUG] response.distance:", response.distance);
+
+      const attendanceStatus = response.status; // "PRESENT" or "ABSENT"
+      const isPresent = attendanceStatus === "PRESENT";
+
+      let description = `Your attendance has been recorded as ${attendanceStatus}.`;
+
+      // Add location context to description only if a location check was performed
       if (response.distance !== null && response.distance !== undefined) {
-        if (response.within_radius) {
+        if (isPresent) {
           description = `✓ You are within the classroom radius (${Math.round(
             response.distance,
           )}m away). Attendance marked as PRESENT.`;
@@ -413,16 +423,12 @@ const StudentDashboard = () => {
             response.distance,
           )}m away). Marked as ABSENT.`;
         }
-      } else if (studentLocation) {
-        description = `Your attendance is recorded as ${isPresent ? "PRESENT" : "ABSENT"} with location verification.`;
       }
 
       toast({
-        title: response.within_radius === false
-          ? "Outside Classroom Radius: ABSENT ⚠️"
-          : (isPresent ? "Attendance Marked: PRESENT ✅" : "Attendance Marked: ABSENT ⚠️"),
+        title: isPresent ? "Attendance Marked: PRESENT ✅" : "Attendance Marked: ABSENT ⚠️",
         description: description,
-        variant: response.within_radius === false || !isPresent ? "destructive" : "default",
+        variant: isPresent ? "default" : "destructive",
       });
 
       setEnteredCode("");
