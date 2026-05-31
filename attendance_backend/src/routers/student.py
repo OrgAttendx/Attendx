@@ -206,7 +206,7 @@ async def get_student_attendance_history(class_id: int, student_id: int):
             FROM attendance_sessions s
             LEFT JOIN attendance_records ar ON s.session_id = ar.session_id AND ar.student_id = :student_id
             WHERE s.class_id = :class_id
-            AND s.status != 'ACTIVE'
+            AND (s.status != 'ACTIVE' OR ar.status IS NOT NULL)
             ORDER BY s.start_time DESC
             """
         )

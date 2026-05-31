@@ -400,36 +400,44 @@ const StudentDashboard = () => {
         studentLocation,
       );
 
-      // Show detailed success message
-      // Use response.status (the actual DB status) as the sole source of truth
+      // Handle two possible response formats:
+      // 1. Direct Lambda: { status: "PRESENT"/"ABSENT", distance, within_radius }
+      // 2. SQS queued:    { status: "success", message: "Attendance recorded", message_id: "..." }
       console.log("[ATTENDANCE DEBUG] Full API response:", response);
-      console.log("[ATTENDANCE DEBUG] response.status:", response.status);
-      console.log("[ATTENDANCE DEBUG] response.within_radius:", response.within_radius);
-      console.log("[ATTENDANCE DEBUG] response.distance:", response.distance);
 
-      const attendanceStatus = response.status; // "PRESENT" or "ABSENT"
+      const isSQSResponse = response.status === "success" || response.message_id;
+      const attendanceStatus = response.status; // "PRESENT", "ABSENT", or "success"
       const isPresent = attendanceStatus === "PRESENT";
+      const isAbsent = attendanceStatus === "ABSENT";
 
-      let description = `Your attendance has been recorded as ${attendanceStatus}.`;
+      let title, description, variant;
 
-      // Add location context to description only if a location check was performed
-      if (response.distance !== null && response.distance !== undefined) {
-        if (isPresent) {
-          description = `✓ You are within the classroom radius (${Math.round(
-            response.distance,
-          )}m away). Attendance marked as PRESENT.`;
-        } else {
-          description = `✗ You are outside the classroom radius (${Math.round(
-            response.distance,
-          )}m away). Marked as ABSENT.`;
-        }
+      if (isSQSResponse) {
+        // SQS path — attendance was queued and will be processed shortly.
+        // The actual PRESENT/ABSENT is determined server-side; show positive confirmation.
+        title = "Attendance Submitted ✅";
+        description = "Your attendance has been recorded successfully. Check your attendance history for the status.";
+        variant = "default";
+      } else if (isPresent) {
+        title = "Attendance Marked: PRESENT ✅";
+        description = (response.distance != null)
+          ? `✓ You are within the classroom radius (${Math.round(response.distance)}m away). Attendance marked as PRESENT.`
+          : "Your attendance has been recorded as PRESENT.";
+        variant = "default";
+      } else if (isAbsent) {
+        title = "Attendance Marked: ABSENT ⚠️";
+        description = (response.distance != null)
+          ? `✗ You are outside the classroom radius (${Math.round(response.distance)}m away). Marked as ABSENT.`
+          : "Your attendance has been recorded as ABSENT.";
+        variant = "destructive";
+      } else {
+        // Unexpected format — treat as success to avoid false alarm
+        title = "Attendance Submitted ✅";
+        description = response.message || "Your attendance has been recorded.";
+        variant = "default";
       }
 
-      toast({
-        title: isPresent ? "Attendance Marked: PRESENT ✅" : "Attendance Marked: ABSENT ⚠️",
-        description: description,
-        variant: isPresent ? "default" : "destructive",
-      });
+      toast({ title, description, variant });
 
       setEnteredCode("");
       setStudentLocation(null);
