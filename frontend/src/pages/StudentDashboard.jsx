@@ -792,16 +792,16 @@ const StudentDashboard = () => {
                           </CardDescription>
                           <CardTitle className="text-xl sm:text-2xl text-primary">
                             {attendanceRecords.records?.length > 0
-                              ? Math.round(
+                              ? (
                                   (attendanceRecords.records.filter(
                                     (r) =>
                                       r.status === "PRESENT" ||
                                       r.status === "LATE",
                                   ).length /
                                     attendanceRecords.records.length) *
-                                    100,
-                                )
-                              : 0}
+                                  100
+                                ).toFixed(1)
+                              : "0.0"}
                             %
                           </CardTitle>
                         </CardHeader>

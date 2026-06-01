@@ -168,15 +168,24 @@ async def get_student_class_details(class_id: int, student_id: int):
         sql = text(
             """
             SELECT
-                c.class_id, c.class_name, c.faculty_id, u.name as faculty_name, NULL::text as attendance_mode,
-                COUNT(CASE WHEN ar.status = 'PRESENT' THEN 1 END)::FLOAT / NULLIF(COUNT(ar.record_id), 0) * 100 as attendance_rate
+                c.class_id,
+                c.class_name,
+                c.faculty_id,
+                u.name as faculty_name,
+                NULL::text as attendance_mode,
+                COALESCE(
+                    (
+                        SELECT COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0) * 100
+                        FROM attendance_sessions s2
+                        LEFT JOIN attendance_records ar ON ar.session_id = s2.session_id AND ar.student_id = :student_id
+                        WHERE s2.class_id = c.class_id
+                        AND (s2.status != 'ACTIVE' OR ar.status IS NOT NULL)
+                    ),
+                    0
+                ) as attendance_rate
             FROM classes c
             JOIN users u ON c.faculty_id = u.user_id
-            LEFT JOIN class_enrollments ce ON c.class_id = ce.class_id AND ce.student_id = :student_id
-            LEFT JOIN attendance_sessions s ON s.class_id = c.class_id
-            LEFT JOIN attendance_records ar ON ar.session_id = s.session_id AND ar.student_id = :student_id
             WHERE c.class_id = :class_id
-            GROUP BY c.class_id, c.class_name, c.faculty_id, u.name
             """
         )
         async with engine.connect() as conn:

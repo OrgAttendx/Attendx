@@ -241,6 +241,7 @@ const FacultyDashboard = () => {
   const [endSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
   const [classToEnd, setClassToEnd] = useState(null);
   const [deleteClassDialogOpen, setDeleteClassDialogOpen] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
   const [classToDelete, setClassToDelete] = useState(null);
   const [deletingClass, setDeletingClass] = useState(false);
 
@@ -534,6 +535,7 @@ const FacultyDashboard = () => {
 
   const handleDeleteClass = (classItem) => {
     setClassToDelete(classItem);
+    setDeleteConfirmationText("");
     setDeleteClassDialogOpen(true);
   };
 
@@ -1024,25 +1026,44 @@ const FacultyDashboard = () => {
       {/* Delete Class Confirmation Dialog */}
       <AlertDialog
         open={deleteClassDialogOpen}
-        onOpenChange={setDeleteClassDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteClassDialogOpen(open);
+          if (!open) {
+            setDeleteConfirmationText("");
+          }
+        }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
               Delete Class?
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to permanently delete <strong>{classToDelete?.class_name}</strong>?
-              <br /><br />
-              This action is <strong className="text-destructive">irreversible</strong> and will permanently delete all related attendance sessions, students' records, and classes' statistics.
+            <AlertDialogDescription className="space-y-3">
+              <span>
+                Are you sure you want to permanently delete <strong>{classToDelete?.class_name}</strong>?
+                This action is <strong className="text-destructive">irreversible</strong> and will permanently delete all related attendance sessions, students' records, and classes' statistics.
+              </span>
+              <div className="pt-2 space-y-1.5">
+                <Label htmlFor="delete-confirm-input" className="text-xs font-semibold text-foreground/80">
+                  Please type <strong className="text-destructive select-all">delete</strong> to confirm:
+                </Label>
+                <Input
+                  id="delete-confirm-input"
+                  placeholder='Type "delete" here'
+                  value={deleteConfirmationText}
+                  onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                  className="h-10 border-destructive/20 focus-visible:ring-destructive/30"
+                  autoComplete="off"
+                />
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingClass}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteClass}
-              disabled={deletingClass}
+              disabled={deletingClass || deleteConfirmationText !== "delete"}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deletingClass ? "Deleting..." : "Delete Permanently"}
