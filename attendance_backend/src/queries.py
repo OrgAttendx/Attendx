@@ -2,41 +2,6 @@ from sqlalchemy import text
 from typing import List, Dict, Optional
 from src.core.database import engine
 
-# ---------------------------------------------------------
-# ✅ Helper: Create Notification (Async)
-# ---------------------------------------------------------
-async def create_notification(
-    user_id: int,
-    type: str,
-    title: str,
-    message: str,
-    priority: str = "medium",
-    related_class_id: Optional[int] = None,
-    related_session_id: Optional[int] = None
-):
-    """Helper function to create notifications"""
-    try:
-        sql = text(
-            """
-            INSERT INTO notifications 
-            (user_id, type, title, message, priority, related_class_id, related_session_id, is_read, created_at)
-            VALUES (:uid, :type, :title, :message, :priority, :class_id, :session_id, FALSE, CURRENT_TIMESTAMP)
-            """
-        )
-        async with engine.begin() as conn:
-            await conn.execute(sql, {
-                "uid": user_id,
-                "type": type,
-                "title": title,
-                "message": message,
-                "priority": priority,
-                "class_id": related_class_id,
-                "session_id": related_session_id
-            })
-            # commit is auto-handled by 'begin()' context manager
-    except Exception as e:
-        print(f"[NOTIFICATION] Failed to create notification: {str(e)}")
-
 
 # ---------------------------------------------------------
 # ✅ Sessions on a specific date
@@ -115,47 +80,6 @@ async def get_absent_students_in_class_on_date(class_id: int, date_str: str) -> 
     """)
     async with engine.connect() as conn:
         result = await conn.execute(sql, {"class_id": class_id, "date": date_str})
-        return [dict(r._mapping) for r in result]
-
-
-# ---------------------------------------------------------
-# ✅ Notifications
-# ---------------------------------------------------------
-async def get_unread_notifications_for_user_on_date(user_id: int, date_str: str) -> List[Dict]:
-    sql = text("""
-        SELECT type, message, created_at
-        FROM Notifications
-        WHERE user_id = :user_id
-          AND is_read = FALSE
-          AND DATE(created_at) = :date
-    """)
-    async with engine.connect() as conn:
-        result = await conn.execute(sql, {"user_id": user_id, "date": date_str})
-        return [dict(r._mapping) for r in result]
-
-
-async def get_attendance_notifications_for_user(user_id: int) -> List[Dict]:
-    sql = text("""
-        SELECT type, message, created_at
-        FROM Notifications
-        WHERE user_id = :user_id AND type = 'ATTENDANCE_STATUS'
-        ORDER BY created_at DESC
-    """)
-    async with engine.connect() as conn:
-        result = await conn.execute(sql, {"user_id": user_id})
-        return [dict(r._mapping) for r in result]
-
-
-async def get_session_notifications_for_user(user_id: int) -> List[Dict]:
-    sql = text("""
-        SELECT type, message, created_at
-        FROM Notifications
-        WHERE user_id = :user_id 
-          AND type IN ('SESSION_START','SESSION_END')
-        ORDER BY created_at DESC
-    """)
-    async with engine.connect() as conn:
-        result = await conn.execute(sql, {"user_id": user_id})
         return [dict(r._mapping) for r in result]
 
 

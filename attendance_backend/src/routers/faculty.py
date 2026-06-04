@@ -2,11 +2,14 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text, bindparam
 from src.core.database import engine
 from src.core.utils import generate_code
-from src.queries import create_notification
-from src.models.schemas import CreateClassRequest, StartSessionRequest, MarkAttendanceRequest
+from src.models.schemas import CreateClassRequest, StartSessionRequest, MarkAttendanceRequest, AdminResetPasswordRequest
 from src import queries
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
+import os
+import secrets
+from src.core.config import RESET_ADMIN_KEY
+
 
 router = APIRouter(tags=["faculty"])
 
@@ -166,25 +169,6 @@ async def start_session(class_id: int, request: StartSessionRequest = None):
             class_row_data = class_row.fetchone()
             class_name = class_row_data[0] if class_row_data else "Unknown Class"
             
-            # Get enrolled students
-            students_sql = text("SELECT student_id FROM class_enrollments WHERE class_id = :cid")
-            students_result = await conn.execute(students_sql, {"cid": class_id})
-            students = students_result.fetchall()
-             
-            # Notifications (DISABLED)
-            # Doing this in loop async is fine for now, but batch insert is better.
-            # create_notification is atomic, so we just await it.
-            # for student in students:
-            #     await create_notification(
-            #         user_id=student[0],
-            #         type="session_start",
-            #         title="New Attendance Session",
-            #         message=f"{class_name} attendance session is now active. Code: {code}",
-            #         priority="high",
-            #         related_class_id=class_id,
-            #         related_session_id=session_id
-            #     )
-            
             return session_data
     except Exception as e:
         import traceback
@@ -237,31 +221,14 @@ async def end_session(class_id: int, session_id: int):
             if not row:
                 raise HTTPException(status_code=404, detail="Session not found")
             
-            # Stats & Notifications
+            # Stats
             try:
                 class_sql = text("SELECT class_name FROM classes WHERE class_id = :cid")
                 class_res = await conn.execute(class_sql, {"cid": class_id})
                 c_row = class_res.fetchone()
                 class_name = c_row[0] if c_row else "Unknown Class"
-                
-                students_sql = text("SELECT student_id, status FROM attendance_records WHERE session_id = :sid")
-                students = (await conn.execute(students_sql, {"sid": session_id})).fetchall()
-                
-                # for student in students:
-                #     sid, status = student[0], student[1]
-                #     msg = f"Your attendance has been marked as {status} for {class_name}" if status in ['PRESENT', 'LATE'] else f"You were marked absent for {class_name}"
-                #     # Fire and forget notifications to avoid blocking/failing the main request
-                #     await create_notification(
-                #         user_id=sid,
-                #         type="attendance_marked" if status in ['PRESENT', 'LATE'] else "attendance_absent",
-                #         title="Attendance Recorded" if status in ['PRESENT', 'LATE'] else "Marked Absent",
-                #         message=msg,
-                #         priority="low" if status in ['PRESENT', 'LATE'] else "medium",
-                #         related_class_id=class_id,
-                #         related_session_id=session_id
-                #     )
             except Exception as notify_ex:
-                print(f"[END_SESSION] Warning: Failed to send notifications: {notify_ex}")
+                print(f"[END_SESSION] Warning: failed stats lookup: {notify_ex}")
                 # Do not raise here, so the session is still closed successfully
 
             return dict(row._mapping)
@@ -474,20 +441,6 @@ async def mark_attendance_manual(session_id: int, payload: MarkAttendanceRequest
                     {"sid": session_id, "uid": payload.student_id, "st": status}
                  )
             
-            # Notification (DISABLED)
-            # class_info = (await conn.execute(
-            #     text("SELECT c.class_name FROM classes c JOIN attendance_sessions s ON c.class_id = s.class_id WHERE s.session_id = :sid"),
-            #     {"sid": session_id}
-            # )).fetchone()
-            
-            # if class_info:
-            #     await create_notification(
-            #         user_id=payload.student_id,
-            #         type="attendance_marked",
-            #         title="Attendance Updated",
-            #         message=f"Your attendance has been manually marked as {status} for {class_info[0]}",
-            #         priority="medium"
-            #     )
             return {"message": "Attendance updated", "status": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -521,3 +474,178 @@ async def get_session_attendance_flat(session_id: int):
             return [dict(r._mapping) for r in result]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------- FACULTY ADMIN: RESET PASSWORD --------------------
+
+@router.get("/api/faculty/users")
+async def list_all_users():
+    """List all users (students + faculty) for the password reset picker."""
+    try:
+        sql = text(
+            """
+            SELECT user_id, name, email, role
+            FROM users
+            ORDER BY role, name
+            """
+        )
+        async with engine.connect() as conn:
+            result = await conn.execute(sql)
+            return [dict(r._mapping) for r in result]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/faculty/admin/reset-password")
+async def admin_reset_password(request: AdminResetPasswordRequest):
+    """Faculty-only: directly reset any user's password (no email token required)."""
+    try:
+        # Secure comparison of admin confirmation key
+        server_admin_key = RESET_ADMIN_KEY
+        if not server_admin_key:
+            print("[ADMIN_RESET] SECURITY ALERT: RESET_ADMIN_KEY is not configured in the application config!")
+            raise HTTPException(
+                status_code=500,
+                detail="Password reset is disabled: Admin reset key is not configured."
+            )
+        
+        if not secrets.compare_digest(request.admin_key, server_admin_key):
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid admin reset key. Access denied."
+            )
+
+        if len(request.new_password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 6 characters long"
+            )
+
+        from src.core.security import get_password_hash
+        new_hash = get_password_hash(request.new_password)
+
+        async with engine.begin() as conn:
+            # Verify user exists
+            check_sql = text("SELECT user_id, name, email FROM users WHERE user_id = :user_id")
+            result = await conn.execute(check_sql, {"user_id": request.user_id})
+            user = result.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # Update password
+            update_sql = text(
+                "UPDATE users SET password_hash = :password_hash WHERE user_id = :user_id"
+            )
+            await conn.execute(update_sql, {
+                "password_hash": new_hash,
+                "user_id": request.user_id
+            })
+
+        user_data = dict(user._mapping)
+        print(f"[ADMIN_RESET] Password reset for user_id={request.user_id} ({user_data['email']})")
+        return {
+            "message": f"Password for {user_data['name']} has been reset successfully",
+            "success": True
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ADMIN_RESET] ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/faculty/classes/{class_id}/sessions/all-with-attendance")
+async def get_all_sessions_with_attendance(class_id: int):
+    """
+    Get all sessions with their attendance records flat, optimized for a single export file.
+    """
+    try:
+        # 1. Fetch all sessions to ensure we return sessions even if they don't have enrollments/records
+        sessions_sql = text(
+            """
+            SELECT session_id, start_time, end_time, status, generated_code
+            FROM attendance_sessions
+            WHERE class_id = :class_id
+            ORDER BY start_time DESC
+            """
+        )
+        
+        # 2. Fetch all attendance records flat for the class sessions
+        records_sql = text(
+            """
+            SELECT 
+                s.session_id,
+                ce.student_id,
+                u.name as student_name,
+                ce.roll_number,
+                ce.section,
+                COALESCE(ar.status, 'ABSENT') as status,
+                ar.marked_at
+            FROM attendance_sessions s
+            JOIN class_enrollments ce ON s.class_id = ce.class_id
+            JOIN users u ON ce.student_id = u.user_id
+            LEFT JOIN attendance_records ar ON ar.session_id = s.session_id AND ar.student_id = ce.student_id
+            WHERE s.class_id = :class_id
+            ORDER BY ce.roll_number
+            """
+        )
+        
+        async with engine.connect() as conn:
+            sessions_res = await conn.execute(sessions_sql, {"class_id": class_id})
+            sessions_rows = [dict(r._mapping) for r in sessions_res]
+            
+            records_res = await conn.execute(records_sql, {"class_id": class_id})
+            records_rows = [dict(r._mapping) for r in records_res]
+            
+        # Group records by session_id
+        records_by_session = {}
+        for r in records_rows:
+            sid = r["session_id"]
+            if sid not in records_by_session:
+                records_by_session[sid] = []
+            
+            # Format marked_at to ISO string if exists
+            marked_at_str = r["marked_at"].isoformat() if r["marked_at"] else None
+            
+            records_by_session[sid].append({
+                "student_id": r["student_id"],
+                "student_name": r["student_name"],
+                "roll_number": r["roll_number"],
+                "section": r["section"],
+                "status": r["status"],
+                "marked_at": marked_at_str
+            })
+            
+        # Assemble sessions list
+        sessions_list = []
+        for s in sessions_rows:
+            sid = s["session_id"]
+            recs = records_by_session.get(sid, [])
+            
+            # Calculate totals (Late is also counted in totals if needed, but match present/late/absent)
+            present_count = sum(1 for r in recs if r["status"] == "PRESENT")
+            late_count = sum(1 for r in recs if r["status"] == "LATE")
+            absent_count = sum(1 for r in recs if r["status"] == "ABSENT")
+            
+            sessions_list.append({
+                "session_id": sid,
+                "start_time": s["start_time"].isoformat() if s["start_time"] else None,
+                "end_time": s["end_time"].isoformat() if s["end_time"] else None,
+                "status": s["status"],
+                "generated_code": s["generated_code"],
+                "records": recs,
+                "totals": {
+                    "present": present_count,
+                    "late": late_count,
+                    "absent": absent_count
+                }
+            })
+            
+        return {"sessions": sessions_list}
+    except Exception as e:
+        import traceback
+        print(f"[EXPORT_ALL_SESSIONS] ERROR: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+

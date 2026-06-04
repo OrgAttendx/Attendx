@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
 from src.core.database import engine
 from src.core.utils import calculate_distance
-from src.queries import create_notification
 from src.models.schemas import JoinClassRequest, SubmitAttendanceCode
 from src import queries
 from typing import Optional
@@ -67,35 +66,6 @@ async def join_class(join_data: JoinClassRequest):
                 "roll_number": join_data.roll_number,
                 "section": section_value
             })
-            
-            # Notifications (DISABLED)
-            # student_sql = text("SELECT name FROM users WHERE user_id = :uid")
-            # s_row = (await conn.execute(student_sql, {"uid": join_data.student_id})).fetchone()
-            # student_name = s_row[0] if s_row else "Unknown Student"
-            
-            # class_detail_sql = text("SELECT class_name, faculty_id FROM classes WHERE class_id = :cid")
-            # c_row = (await conn.execute(class_detail_sql, {"cid": class_id})).fetchone()
-            # class_name = c_row[0] if c_row else "Unknown Class"
-            # faculty_id = c_row[1] if c_row else None
-            
-            # await create_notification(
-            #     user_id=join_data.student_id,
-            #     type="class_joined",
-            #     title="Joined Class",
-            #     message=f"You have successfully joined {class_name}",
-            #     priority="low",
-            #     related_class_id=class_id
-            # )
-            
-            # if faculty_id:
-            #     await create_notification(
-            #         user_id=faculty_id,
-            #         type="student_joined",
-            #         title="New Student",
-            #         message=f"{student_name} has joined your {class_name} class",
-            #         priority="low",
-            #         related_class_id=class_id
-            #     )
             
             return {"message": "Successfully joined class", "class_id": class_id}
     except HTTPException:
@@ -172,47 +142,9 @@ async def submit_code(payload: SubmitAttendanceCode):
                 )
                 await conn.execute(insert_sql, {"ses": session_id, "sid": payload.student_id, "status": status})
             
-            # Notifications
-            # Notifications (DISABLED for scalability)
             class_sql = text("SELECT class_name, faculty_id FROM classes WHERE class_id = :cid")
             c_row = (await conn.execute(class_sql, {"cid": class_id})).fetchone()
             class_name = c_row.class_name
-            # faculty_id = c_row.faculty_id
-            
-            # student_sql = text("SELECT name FROM users WHERE user_id = :uid")
-            # s_row = (await conn.execute(student_sql, {"uid": payload.student_id})).fetchone()
-            # student_name = s_row.name or "A student"
-            
-            # if status == "ABSENT":
-            #     await create_notification(
-            #         user_id=payload.student_id,
-            #         type="attendance_marked",
-            #         title="Attendance: Outside Zone",
-            #         message=f"You were outside the classroom radius for {class_name}{location_message}",
-            #         priority="high",
-            #         related_class_id=class_id,
-            #         related_session_id=session_id
-            #     )
-            # else:
-            #      await create_notification(
-            #         user_id=payload.student_id,
-            #         type="attendance_marked",
-            #         title="Attendance Confirmed",
-            #         message=f"Your attendance has been recorded as {status} for {class_name}{location_message}",
-            #         priority="low",
-            #         related_class_id=class_id,
-            #         related_session_id=session_id
-            #     )
-            
-            # await create_notification(
-            #     user_id=faculty_id,
-            #     type="student_marked",
-            #     title="Student Attendance",
-            #     message=f"{student_name} marked attendance for {class_name} ({status})",
-            #     priority="low",
-            #     related_class_id=class_id,
-            #     related_session_id=session_id
-            # )
 
             return {
                 "message": f"Attendance marked as {status}{location_message}",
@@ -236,15 +168,24 @@ async def get_student_class_details(class_id: int, student_id: int):
         sql = text(
             """
             SELECT
-                c.class_id, c.class_name, c.faculty_id, u.name as faculty_name, NULL::text as attendance_mode,
-                COUNT(CASE WHEN ar.status = 'PRESENT' THEN 1 END)::FLOAT / NULLIF(COUNT(ar.record_id), 0) * 100 as attendance_rate
+                c.class_id,
+                c.class_name,
+                c.faculty_id,
+                u.name as faculty_name,
+                NULL::text as attendance_mode,
+                COALESCE(
+                    (
+                        SELECT COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0) * 100
+                        FROM attendance_sessions s2
+                        LEFT JOIN attendance_records ar ON ar.session_id = s2.session_id AND ar.student_id = :student_id
+                        WHERE s2.class_id = c.class_id
+                        AND (s2.status != 'ACTIVE' OR ar.status IS NOT NULL)
+                    ),
+                    0
+                ) as attendance_rate
             FROM classes c
             JOIN users u ON c.faculty_id = u.user_id
-            LEFT JOIN class_enrollments ce ON c.class_id = ce.class_id AND ce.student_id = :student_id
-            LEFT JOIN attendance_sessions s ON s.class_id = c.class_id
-            LEFT JOIN attendance_records ar ON ar.session_id = s.session_id AND ar.student_id = :student_id
             WHERE c.class_id = :class_id
-            GROUP BY c.class_id, c.class_name, c.faculty_id, u.name
             """
         )
         async with engine.connect() as conn:
@@ -274,7 +215,7 @@ async def get_student_attendance_history(class_id: int, student_id: int):
             FROM attendance_sessions s
             LEFT JOIN attendance_records ar ON s.session_id = ar.session_id AND ar.student_id = :student_id
             WHERE s.class_id = :class_id
-            AND s.status != 'ACTIVE'
+            AND (s.status != 'ACTIVE' OR ar.status IS NOT NULL)
             ORDER BY s.start_time DESC
             """
         )

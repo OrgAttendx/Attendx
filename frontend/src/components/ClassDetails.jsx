@@ -2,6 +2,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState, useEffect, useRef } from "react";
 import { facultyAPI } from "@/services/api";
+import { attendanceApi } from "@/api/attendance";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -13,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, ChevronDown } from "lucide-react";
+import { Download, ChevronDown, Search, X, UserMinus } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   DropdownMenu,
@@ -54,6 +56,64 @@ const ClassDetails = ({ classItem }) => {
   const [exportProgress, setExportProgress] = useState("");
 
   const pollRef = useRef(null);
+
+  const [rowUpdating, setRowUpdating] = useState({});
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const handleUpdateStatus = async (studentId, studentName, newStatus) => {
+    if (!selectedSession || !studentId) return;
+    
+    setRowUpdating(prev => ({ ...prev, [studentId]: true }));
+    try {
+      await attendanceApi.markManualAttendance(selectedSession, studentId, newStatus);
+      
+      // Update local table data instantly
+      setRows(prevRows => 
+        prevRows.map(row => 
+          row.student_id === studentId 
+            ? { ...row, status: newStatus, marked_at: new Date().toISOString().replace('Z', '') }
+            : row
+        )
+      );
+
+      // Recalculate totals
+      setRows(currentRows => {
+        const updatedRows = currentRows.map(row => 
+          row.student_id === studentId 
+            ? { ...row, status: newStatus }
+            : row
+        );
+        const present = updatedRows.filter(x => x.status === "PRESENT" || x.status === "LATE").length;
+        const absent = updatedRows.filter(x => x.status === "ABSENT").length;
+        setTotals({ present, late: 0, absent });
+        return updatedRows;
+      });
+
+      toast({
+        title: "Attendance Updated",
+        description: `Successfully marked ${studentName} as ${newStatus}.`,
+      });
+    } catch (err) {
+      console.error("[ClassDetails] Error updating attendance:", err);
+      toast({
+        title: "Error",
+        description: err.message || "Failed to update attendance status.",
+        variant: "destructive",
+      });
+    } finally {
+      setRowUpdating(prev => ({ ...prev, [studentId]: false }));
+    }
+  };
+
+  const filteredRows = rows.filter((r) => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      (r.student_name && r.student_name.toLowerCase().includes(query)) ||
+      (r.roll_number && r.roll_number.toLowerCase().includes(query)) ||
+      (r.section && r.section.toLowerCase().includes(query))
+    );
+  });
 
   /* ---------------------------------------------------
      Export attendance to Excel
@@ -442,7 +502,6 @@ const ClassDetails = ({ classItem }) => {
       const sessions = data.sessions;
       const usedSheetNames = new Set();
 
-      console.log(`Total sessions to export: ${sessions.length}`);
 
       // Process sessions with progress updates
       for (let i = 0; i < sessions.length; i++) {
@@ -451,7 +510,6 @@ const ClassDetails = ({ classItem }) => {
           `Processing session ${i + 1} of ${sessions.length}...`
         );
 
-        console.log(`Exporting session ${i + 1}: ${session.start_time}`);
 
         const recs = Array.isArray(session.records) ? session.records : [];
 
@@ -515,11 +573,9 @@ const ClassDetails = ({ classItem }) => {
         }
 
         usedSheetNames.add(sheetName);
-        console.log(`Adding sheet: ${sheetName}`);
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
 
-      console.log(`Total sheets in workbook: ${wb.SheetNames.length}`);
 
       const filename = `${classItem.class_name}_AllSessions_Complete.xlsx`;
       XLSX.writeFile(wb, filename);
@@ -585,7 +641,6 @@ const ClassDetails = ({ classItem }) => {
 
       const data = await facultyAPI.getSessionAttendanceFlat(sessionId);
 
-      console.log("[ClassDetails] Loaded attendance flat:", data); // DEBUG
       const recs = Array.isArray(data?.records) ? data.records : (Array.isArray(data) ? data : []);
 
       // Count LATE as PRESENT
@@ -788,47 +843,130 @@ const ClassDetails = ({ classItem }) => {
                 </div>
               </div>
 
-              {/* Table - Mobile Responsive with Horizontal Scroll */}
-              <div className="overflow-x-auto -mx-3 sm:mx-0">
-                <div className="inline-block min-w-full align-middle">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="whitespace-nowrap">
-                          Roll Number
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap">
-                          Section
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap">
-                          Student
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap">
-                          Status
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap">
-                          Time
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
+              {/* Search Bar */}
+              {rows.length > 0 && (
+                <div className="mb-4 mt-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+                      <Input
+                        placeholder="Search student by name, roll no, or section..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 pr-9 w-full bg-background/50 border-input/60 hover:border-input focus-visible:ring-1 focus-visible:ring-ring/40 transition-all rounded-lg"
+                      />
+                      {searchQuery && (
+                        <button
+                          onClick={() => setSearchQuery("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors"
+                          type="button"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-muted-foreground select-none">
+                      <span>
+                        Found <strong className="text-foreground">{filteredRows.length}</strong> of{" "}
+                        <strong className="text-foreground">{rows.length}</strong> students
+                      </span>
+                      {searchQuery && (
+                        <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/10 border-transparent text-[10px] sm:text-xs">
+                          Filtered
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
-                    <TableBody>
-                      {rows.map((r) => (
+              {/* Table - Mobile Responsive with Horizontal Scroll */}
+              {filteredRows.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center border rounded-lg bg-muted/10 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60 mb-3 ring-6 ring-muted/10">
+                    <UserMinus className="h-5 w-5 text-muted-foreground/80" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-foreground">No students found</h3>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-xs">
+                    {rows.length === 0 
+                      ? "There are no student records for this session."
+                      : `We couldn't find any students matching "${searchQuery}".`}
+                  </p>
+                  {searchQuery && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSearchQuery("")}
+                      className="mt-3 gap-1.5 hover:bg-muted rounded-lg shadow-sm border-dashed text-xs h-8"
+                    >
+                      <X className="h-3 w-3" />
+                      Clear Search
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto -mx-3 sm:mx-0">
+                  <div className="inline-block min-w-full align-middle">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">
+                            Roll Number
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            Section
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            Student
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            Status
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            Time
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+
+                      <TableBody>
+                        {filteredRows.map((r) => (
                         <TableRow key={r.student_id ? `${r.student_id}-${r.roll_number}` : `${r.student_name}-${Math.random()}`}>
                           <TableCell>{r.roll_number || "—"}</TableCell>
                           <TableCell>{r.section || "—"}</TableCell>
                           <TableCell>{r.student_name}</TableCell>
 
                           <TableCell>
-                            <Badge
-                              variant={
-                                r.status === "PRESENT" || r.status === "LATE"
-                                  ? "default"
-                                  : "destructive"
-                              }
-                            >
-                              {r.status === "LATE" ? "PRESENT" : r.status}
-                            </Badge>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild disabled={rowUpdating[r.student_id]}>
+                                <button className="cursor-pointer focus:outline-none transition-transform active:scale-95 disabled:opacity-50">
+                                  <Badge
+                                    variant={
+                                      r.status === "PRESENT" || r.status === "LATE"
+                                        ? "default"
+                                        : "destructive"
+                                    }
+                                    className="hover:opacity-85 transition-opacity px-2.5 py-1 text-xs select-none cursor-pointer flex items-center gap-1 font-semibold"
+                                  >
+                                    {r.status === "LATE" ? "PRESENT" : r.status}
+                                    <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                                  </Badge>
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="min-w-[100px] rounded-lg shadow-md border-border bg-popover">
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateStatus(r.student_id, r.student_name, "PRESENT")}
+                                  className="text-xs sm:text-sm font-medium hover:bg-muted py-1.5 cursor-pointer text-green-600 focus:text-green-600 focus:bg-green-50 dark:focus:bg-green-950/20"
+                                >
+                                  Present
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateStatus(r.student_id, r.student_name, "ABSENT")}
+                                  className="text-xs sm:text-sm font-medium hover:bg-muted py-1.5 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20"
+                                >
+                                  Absent
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
 
                           <TableCell>
@@ -849,6 +987,7 @@ const ClassDetails = ({ classItem }) => {
                   </Table>
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
         </div>

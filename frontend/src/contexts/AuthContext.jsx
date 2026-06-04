@@ -17,7 +17,6 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [notifications, setNotifications] = useState([]);
 
   // ✅ Restore session from localStorage
   useEffect(() => {
@@ -101,7 +100,6 @@ export const AuthProvider = ({ children }) => {
     isLoading,
     login,
     logout,
-    notifications,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

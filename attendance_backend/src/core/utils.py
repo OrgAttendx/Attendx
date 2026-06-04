@@ -3,7 +3,10 @@ import string
 import math
 
 def generate_code(length: int = 6) -> str:
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
+    # Exclude confusing characters: O, 0, I, 1
+    digits = "23456789"
+    letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    return "".join(random.choices(letters + digits, k=length))
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """

@@ -400,30 +400,44 @@ const StudentDashboard = () => {
         studentLocation,
       );
 
-      // Show detailed success message
-      let description = "Your attendance is recorded.";
-      if (response.distance !== null && response.distance !== undefined) {
-        if (response.within_radius) {
-          description = `✓ You are within the classroom radius (${Math.round(
-            response.distance,
-          )}m away). Attendance marked as PRESENT.`;
-        } else {
-          description = `✗ You are outside the classroom radius (${Math.round(
-            response.distance,
-          )}m away). Marked as ABSENT.`;
-        }
-      } else if (studentLocation) {
-        description = "Your attendance is recorded with location verification.";
+      // Handle two possible response formats:
+      // 1. Direct Lambda: { status: "PRESENT"/"ABSENT", distance, within_radius }
+      // 2. SQS queued:    { status: "success", message: "Attendance recorded", message_id: "..." }
+      console.log("[ATTENDANCE DEBUG] Full API response:", response);
+
+      const isSQSResponse = response.status === "success" || response.message_id;
+      const attendanceStatus = response.status; // "PRESENT", "ABSENT", or "success"
+      const isPresent = attendanceStatus === "PRESENT";
+      const isAbsent = attendanceStatus === "ABSENT";
+
+      let title, description, variant;
+
+      if (isSQSResponse) {
+        // SQS path — attendance was queued and will be processed shortly.
+        // The actual PRESENT/ABSENT is determined server-side; show positive confirmation.
+        title = "Attendance Submitted ✅";
+        description = "Your attendance has been recorded successfully. Check your attendance history for the status.";
+        variant = "default";
+      } else if (isPresent) {
+        title = "Attendance Marked: PRESENT ✅";
+        description = (response.distance != null)
+          ? `✓ You are within the classroom radius (${Math.round(response.distance)}m away). Attendance marked as PRESENT.`
+          : "Your attendance has been recorded as PRESENT.";
+        variant = "default";
+      } else if (isAbsent) {
+        title = "Attendance Marked: ABSENT ⚠️";
+        description = (response.distance != null)
+          ? `✗ You are outside the classroom radius (${Math.round(response.distance)}m away). Marked as ABSENT.`
+          : "Your attendance has been recorded as ABSENT.";
+        variant = "destructive";
+      } else {
+        // Unexpected format — treat as success to avoid false alarm
+        title = "Attendance Submitted ✅";
+        description = response.message || "Your attendance has been recorded.";
+        variant = "default";
       }
 
-      toast({
-        title:
-          response.within_radius === false
-            ? "Outside Classroom Radius ⚠️"
-            : "Attendance Marked ✅",
-        description: description,
-        variant: response.within_radius === false ? "destructive" : "default",
-      });
+      toast({ title, description, variant });
 
       setEnteredCode("");
       setStudentLocation(null);
@@ -765,7 +779,7 @@ const StudentDashboard = () => {
                           </CardDescription>
                           <CardTitle className="text-xl sm:text-2xl text-red-600">
                             {attendanceRecords.records?.filter(
-                              (r) => r.status === "ABSENT",
+                              (r) => r.status === "ABSENT" || !r.status,
                             ).length || 0}
                           </CardTitle>
                         </CardHeader>
@@ -778,16 +792,16 @@ const StudentDashboard = () => {
                           </CardDescription>
                           <CardTitle className="text-xl sm:text-2xl text-primary">
                             {attendanceRecords.records?.length > 0
-                              ? Math.round(
+                              ? (
                                   (attendanceRecords.records.filter(
                                     (r) =>
                                       r.status === "PRESENT" ||
                                       r.status === "LATE",
                                   ).length /
                                     attendanceRecords.records.length) *
-                                    100,
-                                )
-                              : 0}
+                                  100
+                                ).toFixed(1)
+                              : "0.0"}
                             %
                           </CardTitle>
                         </CardHeader>
@@ -861,7 +875,7 @@ const StudentDashboard = () => {
                                         : "destructive"
                                   }
                                 >
-                                  {record.status}
+                                  {record.status || "ABSENT"}
                                 </Badge>
                               </div>
                             ))}
@@ -898,6 +912,19 @@ const StudentDashboard = () => {
                   Some sessions may require location verification. Capture your
                   location to ensure attendance is recorded correctly.
                 </p>
+
+                {/* GPS Tips Banner */}
+                <div className="flex gap-2.5 rounded-xl border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <span className="text-base leading-none shrink-0">📡</span>
+                  <div className="text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <p className="font-semibold">For accurate GPS:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-amber-700 dark:text-amber-400">
+                      <li>Turn <strong>Wi-Fi ON</strong> (no need to connect to any network)</li>
+                      <li>Turn <strong>Battery Saver OFF</strong></li>
+                    </ul>
+                  </div>
+                </div>
+
                 <LocationCapture
                   onLocationCaptured={handleLocationCaptured}
                   autoCapture={false}
