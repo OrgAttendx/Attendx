@@ -72,6 +72,11 @@ def require_student(current_user: dict = Depends(verify_token)) -> dict:
     return current_user
 
 
+def get_current_user(current_user: dict = Depends(verify_token)) -> dict:
+    """Dependency: requires any valid JWT (student or faculty)."""
+    return current_user
+
+
 def create_reset_token() -> str:
     """Generate a secure random token for password reset"""
     return secrets.token_urlsafe(32)

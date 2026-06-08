@@ -136,19 +136,19 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
         update_sql = text(
             """
             UPDATE attendance_records
-            SET status = :status, marked_at = NOW()
+            SET status = :status, marked_at = NOW(), biometric_verified = :biometric_verified
             WHERE session_id = :ses AND student_id = :sid
             """
         )
-        res = await conn.execute(update_sql, {"status": status, "ses": session_id, "sid": payload.student_id})
+        res = await conn.execute(update_sql, {"status": status, "ses": session_id, "sid": payload.student_id, "biometric_verified": payload.biometric_verified})
         if res.rowcount == 0:
             insert_sql = text(
                 """
-                INSERT INTO attendance_records (session_id, student_id, status, marked_at)
-                VALUES (:ses, :sid, :status, NOW())
+                INSERT INTO attendance_records (session_id, student_id, status, marked_at, biometric_verified)
+                VALUES (:ses, :sid, :status, NOW(), :biometric_verified)
                 """
             )
-            await conn.execute(insert_sql, {"ses": session_id, "sid": payload.student_id, "status": status})
+            await conn.execute(insert_sql, {"ses": session_id, "sid": payload.student_id, "status": status, "biometric_verified": payload.biometric_verified})
         
         class_sql = text("SELECT class_name, faculty_id FROM classes WHERE class_id = :cid")
         c_row = (await conn.execute(class_sql, {"cid": class_id})).fetchone()

@@ -41,6 +41,7 @@ class SubmitAttendanceCode(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     accuracy: Optional[float] = None  # GPS accuracy in meters
+    biometric_verified: bool = False   # ← add this
 
     @validator("latitude")
     def validate_latitude(cls, v):
@@ -87,3 +88,14 @@ class AdminResetPasswordRequest(BaseModel):
     user_id: int
     new_password: str
     admin_key: str
+
+
+class DeviceToken(BaseModel):
+    """Schema for device token registration (mobile app)"""
+    id: int
+    user_id: int
+    device_id: str
+    platform: str  # "ios" | "android"
+    biometric_enrolled: bool
+    expo_push_token: Optional[str]
+    created_at: str

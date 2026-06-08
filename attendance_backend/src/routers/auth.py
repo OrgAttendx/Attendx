@@ -1,11 +1,17 @@
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends
-from sqlalchemy import text
-from src.core.database import engine
-from src.core.security import verify_password, get_password_hash, create_access_token, create_reset_token, create_reset_token_expiry, verify_token
+from sqlalchemy import text, insert, insert as sql_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from src.core.database import engine, get_db
+from src.core.security import verify_password, get_password_hash, create_access_token, create_reset_token, create_reset_token_expiry, verify_token, get_current_user
 from src.core.email import send_password_reset_email
 from src.core.config import FACULTY_REGISTER_KEY
-from src.models.schemas import LoginRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest, DeleteAccountRequest
+from src.models.schemas import (
+    LoginRequest, RegisterRequest, ForgotPasswordRequest, 
+    ResetPasswordRequest, DeleteAccountRequest
+)
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["auth"])
 
@@ -387,4 +393,55 @@ async def delete_account(request: DeleteAccountRequest):
     except Exception as e:
         print(f"[DELETE_ACCOUNT] ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+    
+    
+    
+# mobile app
+class DeviceRegistration(BaseModel):
+    device_id: str
+    platform: str          # "ios" | "android"
+    biometric_enrolled: bool = False
+    expo_push_token: str | None = None
+
+
+@router.post("/auth/register-device")
+async def register_device(
+    body: DeviceRegistration,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Register a device for push notifications and biometric authentication"""
+    try:
+        # Using raw SQL with upsert (ON CONFLICT) for PostgreSQL
+        stmt = text("""
+            INSERT INTO device_tokens (user_id, device_id, platform, biometric_enrolled, expo_push_token)
+            VALUES (:user_id, :device_id, :platform, :biometric_enrolled, :expo_push_token)
+            ON CONFLICT (user_id, device_id) DO UPDATE SET
+                biometric_enrolled = :biometric_enrolled,
+                expo_push_token = :expo_push_token
+            RETURNING id
+        """)
+        
+        result = await db.execute(
+            stmt,
+            {
+                "user_id": current_user["user_id"],
+                "device_id": body.device_id,
+                "platform": body.platform,
+                "biometric_enrolled": body.biometric_enrolled,
+                "expo_push_token": body.expo_push_token
+            }
+        )
+        await db.commit()
+        
+        device_token_id = result.scalar()
+        print(f"✅ Device registered: user_id={current_user['user_id']}, device_id={body.device_id}, token_id={device_token_id}")
+        
+        return {"ok": True, "device_token_id": device_token_id}
+    
+    except Exception as e:
+        await db.rollback()
+        print(f"[REGISTER_DEVICE] ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
