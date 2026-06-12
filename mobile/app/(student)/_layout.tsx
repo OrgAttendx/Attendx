@@ -28,9 +28,15 @@ export default function StudentLayout() {
         name="mark-attendance"
         options={{
           title: 'Mark Attendance',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="scan-outline" size={size} color={color} />
-          ),
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="class/[id]"
+        options={{
+          href: null, // hides from tab bar
+          title: 'Class Details',
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>
