@@ -93,6 +93,13 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  // ✅ Update user info in state + localStorage (e.g. after profile edit)
+  const updateUser = (newData) => {
+    const updated = { ...user, ...newData };
+    setUser(updated);
+    localStorage.setItem("user", JSON.stringify(updated));
+  };
+
   // ✅ Context shared across the app
   const value = {
     user,
@@ -100,6 +107,7 @@ export const AuthProvider = ({ children }) => {
     isLoading,
     login,
     logout,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
 from src.core.database import engine
 from src.core.utils import calculate_distance
-from src.models.schemas import JoinClassRequest, SubmitAttendanceCode
+from src.models.schemas import JoinClassRequest, SubmitAttendanceCode, UpdateProfileRequest
 from src.core.security import require_student
 from src import queries
 from typing import Optional
@@ -271,5 +271,79 @@ async def get_student_attendance_history(class_id: int, student_id: int, current
         async with engine.connect() as conn:
             result = await conn.execute(sql, {"class_id": class_id, "student_id": student_id})
             return [dict(r._mapping) for r in result]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/student/classes/{class_id}/leave")
+async def leave_class(class_id: int, student_id: int, current_user: dict = Depends(require_student)):
+    """Allow a student to leave (unenroll from) a class, removing their enrollment and attendance records."""
+    if current_user["user_id"] != student_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        async with engine.begin() as conn:
+            # Verify enrollment exists
+            check_sql = text(
+                "SELECT 1 FROM class_enrollments WHERE student_id = :student_id AND class_id = :class_id"
+            )
+            existing = (await conn.execute(check_sql, {"student_id": student_id, "class_id": class_id})).fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Enrollment not found")
+
+            # Delete attendance records for this student in this class
+            delete_records_sql = text(
+                """
+                DELETE FROM attendance_records
+                WHERE student_id = :student_id
+                AND session_id IN (
+                    SELECT session_id FROM attendance_sessions WHERE class_id = :class_id
+                )
+                """
+            )
+            await conn.execute(delete_records_sql, {"student_id": student_id, "class_id": class_id})
+
+            # Delete the enrollment
+            delete_enroll_sql = text(
+                "DELETE FROM class_enrollments WHERE student_id = :student_id AND class_id = :class_id"
+            )
+            await conn.execute(delete_enroll_sql, {"student_id": student_id, "class_id": class_id})
+
+        return {"message": "Successfully left the class", "class_id": class_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/student/profile")
+async def update_profile(data: UpdateProfileRequest, current_user: dict = Depends(require_student)):
+    """Update a student's name and/or email."""
+    if current_user["user_id"] != data.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        name = data.name.strip()
+        email = data.email.strip().lower()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        if not email or "@" not in email:
+            raise HTTPException(status_code=400, detail="Invalid email address")
+
+        async with engine.begin() as conn:
+            # Check email uniqueness (if changed)
+            email_check_sql = text(
+                "SELECT user_id FROM users WHERE email = :email AND user_id != :user_id"
+            )
+            conflict = (await conn.execute(email_check_sql, {"email": email, "user_id": data.user_id})).fetchone()
+            if conflict:
+                raise HTTPException(status_code=409, detail="Email is already in use by another account")
+
+            update_sql = text(
+                "UPDATE users SET name = :name, email = :email WHERE user_id = :user_id"
+            )
+            await conn.execute(update_sql, {"name": name, "email": email, "user_id": data.user_id})
+
+        return {"message": "Profile updated successfully", "name": name, "email": email}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

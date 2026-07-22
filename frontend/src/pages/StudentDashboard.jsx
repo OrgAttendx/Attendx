@@ -9,6 +9,8 @@ import {
   BookOpen,
   Calendar,
   Sparkles,
+  LogOut,
+  AlertTriangle,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/enhanced-button";
@@ -29,6 +31,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { studentAPI } from "@/services/api";
@@ -203,6 +215,12 @@ const StudentDashboard = () => {
   const [attendanceRecords, setAttendanceRecords] = useState({});
   const [recordsLoading, setRecordsLoading] = useState(false);
 
+  // Leave class state
+  const [leaveClassTarget, setLeaveClassTarget] = useState(null); // class object to leave
+  const [leaveStep1Open, setLeaveStep1Open] = useState(false); // warning dialog
+  const [leaveStep2Open, setLeaveStep2Open] = useState(false); // final confirm
+  const [isLeavingClass, setIsLeavingClass] = useState(false);
+
   useEffect(() => {
     fetchEnrolledClasses();
   }, []);
@@ -375,6 +393,40 @@ const StudentDashboard = () => {
   // Handler for location capture
   const handleLocationCaptured = (locationData) => {
     setStudentLocation(locationData);
+  };
+
+  // ── Leave Class handlers ──
+  const handleLeaveRequest = (classItem) => {
+    setLeaveClassTarget(classItem);
+    setLeaveStep1Open(true);
+  };
+
+  const handleLeaveStep1Confirm = () => {
+    setLeaveStep1Open(false);
+    setLeaveStep2Open(true);
+  };
+
+  const handleLeaveConfirmed = async () => {
+    if (!leaveClassTarget) return;
+    try {
+      setIsLeavingClass(true);
+      await studentAPI.leaveClass(leaveClassTarget.id);
+      toast({
+        title: "Left Class",
+        description: `You have left "${leaveClassTarget.name}".`,
+      });
+      setLeaveStep2Open(false);
+      setLeaveClassTarget(null);
+      fetchEnrolledClasses();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error?.response?.data?.detail || "Failed to leave class.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLeavingClass(false);
+    }
   };
 
   // ✅✅ ENTER CODE FIXED — RECORD CLASS + UPPERCASE CODE
@@ -699,6 +751,14 @@ const StudentDashboard = () => {
                     >
                       View Details
                     </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => handleLeaveRequest(c)}
+                      className="w-full h-9 sm:h-10 text-xs sm:text-sm text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive transition-colors"
+                    >
+                      <LogOut className="h-3.5 w-3.5 mr-2" /> Leave Class
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
@@ -991,6 +1051,86 @@ const StudentDashboard = () => {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* ── Leave Class Step 1: Warning ── */}
+      <AlertDialog open={leaveStep1Open} onOpenChange={setLeaveStep1Open}>
+        <AlertDialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 rounded-full bg-destructive/10">
+                <AlertTriangle className="h-6 w-6 text-destructive" />
+              </div>
+              <AlertDialogTitle className="text-lg sm:text-xl">
+                Leave "{leaveClassTarget?.name}"?
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-sm leading-relaxed space-y-2">
+              <span className="block">
+                Are you sure you want to leave this class? The following data will be permanently deleted:
+              </span>
+              <span className="block pl-3 border-l-2 border-destructive/40 space-y-1 text-foreground/80">
+                <span className="block">• Your enrollment in <strong>{leaveClassTarget?.name}</strong></span>
+                <span className="block">• All your attendance records for this class</span>
+              </span>
+              <span className="block font-medium text-destructive">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:gap-3">
+            <AlertDialogCancel className="h-10 sm:h-11">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleLeaveStep1Confirm}
+              className="h-10 sm:h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Leave Class Step 2: Final Confirm ── */}
+      <AlertDialog open={leaveStep2Open} onOpenChange={(open) => {
+        if (!isLeavingClass) setLeaveStep2Open(open);
+      }}>
+        <AlertDialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 rounded-full bg-destructive/10">
+                <LogOut className="h-6 w-6 text-destructive" />
+              </div>
+              <AlertDialogTitle className="text-lg sm:text-xl">
+                Confirm: Leave Class
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-sm">
+              You are about to leave <strong className="text-foreground">{leaveClassTarget?.name}</strong>.
+              To re-join, you will need the class join code from your faculty.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:gap-3">
+            <AlertDialogCancel className="h-10 sm:h-11" disabled={isLeavingClass}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleLeaveConfirmed}
+              disabled={isLeavingClass}
+              className="h-10 sm:h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isLeavingClass ? (
+                <span className="flex items-center gap-2">
+                  <Loader className="h-4 w-4 animate-spin" />
+                  Leaving...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <LogOut className="h-4 w-4" />
+                  Yes, Leave Class
+                </span>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <p className="text-center text-xs text-muted-foreground py-6">
         &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
       </p>

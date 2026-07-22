@@ -261,4 +261,27 @@ export const studentAPI = {
     });
     return data;
   },
+
+  async leaveClass(class_id) {
+    const user = getUser();
+    if (!user?.user_id) throw new Error("Not logged in as student");
+
+    const { data } = await api.delete(
+      `/student/classes/${class_id}/leave`,
+      { params: { student_id: user.user_id } }
+    );
+    return data;
+  },
+
+  async updateProfile(name, email) {
+    const user = getUser();
+    if (!user?.user_id) throw new Error("Not logged in");
+
+    const { data } = await api.put(`/student/profile`, {
+      user_id: user.user_id,
+      name,
+      email,
+    });
+    return data;
+  },
 };

@@ -11,6 +11,9 @@ import {
   Trash2,
   AlertTriangle,
   Loader,
+  Pencil,
+  X,
+  Check,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -41,15 +44,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { authApi } from "@/api/auth";
+import { studentAPI } from "@/services/api";
 
 const Header = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const { isDarkMode, toggleTheme } = useTheme();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -61,9 +64,60 @@ const Header = () => {
   const [deletePassword, setDeletePassword] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Edit profile states
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const openProfileDialog = () => {
+    setEditName(user?.name || "");
+    setEditEmail(user?.email || "");
+    setIsEditMode(false);
+    setProfileOpen(true);
+  };
+
+  const handleEditToggle = () => {
+    setEditName(user?.name || "");
+    setEditEmail(user?.email || "");
+    setIsEditMode(true);
+  };
+
+  const handleEditCancel = () => {
+    setIsEditMode(false);
+    setEditName(user?.name || "");
+    setEditEmail(user?.email || "");
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    if (!editEmail.trim() || !editEmail.includes("@")) {
+      toast({ title: "Valid email is required", variant: "destructive" });
+      return;
+    }
+    try {
+      setIsSavingProfile(true);
+      const result = await studentAPI.updateProfile(editName.trim(), editEmail.trim());
+      updateUser({ name: result.name, email: result.email });
+      setIsEditMode(false);
+      toast({ title: "Profile updated", description: "Your changes have been saved." });
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error?.response?.data?.detail || "Failed to update profile.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   // Step 1: User clicks "Delete Account" -> show warning confirmation
   const handleDeleteRequest = () => {
-    setProfileOpen(false); // Close profile dialog if open
+    setProfileOpen(false);
     setDeleteConfirmOpen(true);
   };
 
@@ -94,7 +148,6 @@ const Header = () => {
         description: "Your account has been permanently deleted.",
       });
 
-      // Clean up and redirect
       setDeletePasswordOpen(false);
       setDeletePassword("");
       logout();
@@ -155,7 +208,7 @@ const Header = () => {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                <DropdownMenuItem onClick={openProfileDialog}>
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
@@ -178,14 +231,34 @@ const Header = () => {
       </div>
 
       {/* Profile Dialog */}
-      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+      <Dialog open={profileOpen} onOpenChange={(open) => {
+        if (!isSavingProfile) {
+          setProfileOpen(open);
+          if (!open) setIsEditMode(false);
+        }
+      }}>
         <DialogContent className="w-[calc(100vw-2rem)] sm:w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader className="space-y-1 sm:space-y-2 pb-2">
-            <DialogTitle className="text-lg sm:text-2xl">
-              User Profile
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-lg sm:text-2xl">
+                {isEditMode ? "Edit Profile" : "User Profile"}
+              </DialogTitle>
+              {!isEditMode && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleEditToggle}
+                  className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              )}
+            </div>
             <DialogDescription className="text-xs sm:text-sm">
-              Your account information and details
+              {isEditMode
+                ? "Update your name and email address."
+                : "Your account information and details"}
             </DialogDescription>
           </DialogHeader>
 
@@ -203,84 +276,148 @@ const Header = () => {
               </Badge>
             </div>
 
-            {/* User Details */}
-            <div className="space-y-3 sm:space-y-4">
-              <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
-                <Mail className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
-                    Email
-                  </p>
-                  <p className="text-xs sm:text-sm break-all">
-                    {user?.email || "Not provided"}
-                  </p>
+            {isEditMode ? (
+              /* ── Edit Mode ── */
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editName" className="text-sm font-medium">
+                    Full Name
+                  </Label>
+                  <Input
+                    id="editName"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Your full name"
+                    className="h-11"
+                    disabled={isSavingProfile}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editEmail" className="text-sm font-medium">
+                    Email Address
+                  </Label>
+                  <Input
+                    id="editEmail"
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="h-11"
+                    disabled={isSavingProfile}
+                  />
+                </div>
+                <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleEditCancel}
+                    className="h-10 sm:h-11 flex-1"
+                    disabled={isSavingProfile}
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveProfile}
+                    className="h-10 sm:h-11 flex-1"
+                    disabled={isSavingProfile}
+                  >
+                    {isSavingProfile ? (
+                      <span className="flex items-center gap-2">
+                        <Loader className="h-4 w-4 animate-spin" />
+                        Saving...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Check className="h-4 w-4" />
+                        Save Changes
+                      </span>
+                    )}
+                  </Button>
                 </div>
               </div>
-
-              <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
-                <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
-                    User ID
-                  </p>
-                  <p className="text-xs sm:text-sm font-mono break-all">
-                    {user?.user_id || "N/A"}
-                  </p>
-                </div>
-              </div>
-
-              {user?.role === "STUDENT" && user?.roll_number && (
+            ) : (
+              /* ── View Mode ── */
+              <div className="space-y-3 sm:space-y-4">
                 <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
-                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <Mail className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
-                      Roll Number
+                      Email
                     </p>
-                    <p className="text-xs sm:text-sm font-mono">
-                      {user.roll_number}
+                    <p className="text-xs sm:text-sm break-all">
+                      {user?.email || "Not provided"}
                     </p>
                   </div>
                 </div>
-              )}
 
-              <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
-                <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
-                    Member Since
-                  </p>
-                  <p className="text-xs sm:text-sm">
-                    {user?.created_at
-                      ? new Date(user.created_at).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })
-                      : "N/A"}
-                  </p>
+                <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
+                  <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
+                      User ID
+                    </p>
+                    <p className="text-xs sm:text-sm font-mono break-all">
+                      {user?.user_id || "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                {user?.role === "STUDENT" && user?.roll_number && (
+                  <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
+                    <User className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
+                        Roll Number
+                      </p>
+                      <p className="text-xs sm:text-sm font-mono">
+                        {user.roll_number}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50">
+                  <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-1">
+                      Member Since
+                    </p>
+                    <p className="text-xs sm:text-sm">
+                      {user?.created_at
+                        ? new Date(user.created_at).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })
+                        : "N/A"}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
-          <div className="flex flex-col-reverse sm:flex-row justify-between gap-2 pt-2 sm:pt-4 border-t mt-2">
-            <Button
-              variant="outline"
-              onClick={handleDeleteRequest}
-              className="w-full sm:w-auto text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-              size="sm"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Account
-            </Button>
-            <Button
-              onClick={() => setProfileOpen(false)}
-              className="w-full sm:w-auto"
-              size="sm"
-            >
-              Close
-            </Button>
-          </div>
+          {!isEditMode && (
+            <div className="flex flex-col-reverse sm:flex-row justify-between gap-2 pt-2 sm:pt-4 border-t mt-2">
+              <Button
+                variant="outline"
+                onClick={handleDeleteRequest}
+                className="w-full sm:w-auto text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                size="sm"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Account
+              </Button>
+              <Button
+                onClick={() => setProfileOpen(false)}
+                className="w-full sm:w-auto"
+                size="sm"
+              >
+                Close
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -298,7 +435,7 @@ const Header = () => {
             </div>
             <AlertDialogDescription className="text-sm leading-relaxed space-y-2">
               <span className="block">
-                This action is <strong className="text-foreground">permanent and cannot be undone</strong>. 
+                This action is <strong className="text-foreground">permanent and cannot be undone</strong>.
                 All of your data will be permanently deleted, including:
               </span>
               <span className="block pl-2 border-l-2 border-destructive/30 space-y-1">
