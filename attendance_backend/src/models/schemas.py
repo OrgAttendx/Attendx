@@ -87,13 +87,3 @@ class AdminResetPasswordRequest(BaseModel):
     user_id: int
     new_password: str
     admin_key: str
-
-
-class LeaveClassRequest(BaseModel):
-    student_id: int
-
-
-class UpdateProfileRequest(BaseModel):
-    user_id: int
-    name: str
-    email: str
