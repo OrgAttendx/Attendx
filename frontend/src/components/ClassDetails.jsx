@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { facultyAPI } from "@/services/api";
 import { attendanceApi } from "@/api/attendance";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, ChevronDown, Search, X, UserMinus } from "lucide-react";
+import { Download, ChevronDown, Search, X, UserMinus, Pencil, Trash2, Clock, AlertTriangle, Loader } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
 
 const ClassDetails = ({ classItem }) => {
   const { toast } = useToast();
@@ -59,6 +61,58 @@ const ClassDetails = ({ classItem }) => {
 
   const [rowUpdating, setRowUpdating] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Delete Session state (2-step confirmation)
+  const [deleteSessionStep, setDeleteSessionStep] = useState(0); // 0: closed, 1: step 1, 2: step 2
+  const [deleteSessionInput, setDeleteSessionInput] = useState("");
+  const [isDeletingSession, setIsDeletingSession] = useState(false);
+
+
+  const handleOpenDeleteSession = () => {
+    setDeleteSessionInput("");
+    setDeleteSessionStep(1);
+  };
+
+  const handleConfirmDeleteStep1 = () => {
+    setDeleteSessionInput("");
+    setDeleteSessionStep(2);
+  };
+
+  const handleConfirmDeleteStep2 = async () => {
+    if (!selectedSession) return;
+
+    if (deleteSessionInput.trim().toLowerCase() !== "delete") {
+      toast({
+        title: "Validation Error",
+        description: 'Please type "delete" to confirm.',
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsDeletingSession(true);
+      await facultyAPI.deleteSession(selectedSession);
+      toast({
+        title: "Session Deleted 🗑️",
+        description: "The session and its attendance records have been deleted.",
+      });
+      setDeleteSessionStep(0);
+      setDeleteSessionInput("");
+      setSelectedSession(null);
+      loadSessions();
+    } catch (err) {
+      toast({
+        title: "Error Deleting Session",
+        description: err.response?.data?.detail || err.message || "Failed to delete session.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingSession(false);
+    }
+  };
+
+
 
   const handleUpdateStatus = async (studentId, studentName, newStatus) => {
     if (!selectedSession || !studentId) return;
@@ -797,28 +851,45 @@ const ClassDetails = ({ classItem }) => {
             </CardHeader>
 
             <CardContent>
-              {/* Session Dropdown */}
+              {/* Session Dropdown & Actions */}
               {sessions.length > 0 && (
-                <div className="mb-4">
-                  <label className="text-sm font-medium text-foreground">
-                    Select Session
-                  </label>
-                  <select
-                    className="border rounded-md w-full p-2 mt-1 bg-background text-foreground border-input focus:ring-2 focus:ring-ring"
-                    value={selectedSession || ""}
-                    onChange={(e) => setSelectedSession(Number(e.target.value))}
-                  >
-                    {sessions.map((s) => (
-                      <option key={s.session_id} value={s.session_id}>
-                        Session {s.session_id} at{" "}
-                        {new Date(s.start_time).toLocaleTimeString("en-IN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mb-4 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                    <div className="flex-1">
+                      <label className="text-sm font-medium text-foreground">
+                        Select Session
+                      </label>
+                      <select
+                        className="border rounded-md w-full p-2 mt-1 bg-background text-foreground border-input focus:ring-2 focus:ring-ring"
+                        value={selectedSession || ""}
+                        onChange={(e) => setSelectedSession(Number(e.target.value))}
+                      >
+                        {sessions.map((s) => (
+                          <option key={s.session_id} value={s.session_id}>
+                            Session #{s.session_id} — {new Date(s.start_time).toLocaleTimeString("en-IN", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                            })} {s.status === 'ACTIVE' ? '(ACTIVE)' : '(CLOSED)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {selectedSession && (
+                      <div className="flex items-center gap-2 pt-1 sm:pt-0">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={handleOpenDeleteSession}
+                          className="h-10 text-xs sm:text-sm gap-1.5"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete Session
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1049,6 +1120,108 @@ const ClassDetails = ({ classItem }) => {
               className="w-full sm:w-auto"
             >
               {exportLoading ? "Exporting..." : "Export"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Session Confirmation - Step 1 */}
+      <Dialog
+        open={deleteSessionStep === 1}
+        onOpenChange={(open) => {
+          if (!open) setDeleteSessionStep(0);
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-amber-500 mb-1">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <DialogTitle className="text-lg sm:text-xl">
+                Delete Session #{selectedSession}?
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-sm text-muted-foreground pt-1">
+              Are you sure you want to delete Session #{selectedSession}? All student attendance records recorded for this session will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteSessionStep(0)}
+              className="h-10 sm:h-11"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteStep1}
+              className="h-10 sm:h-11"
+            >
+              Continue
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Session Confirmation - Step 2 (Final Warning with typed confirmation) */}
+      <Dialog
+        open={deleteSessionStep === 2}
+        onOpenChange={(open) => {
+          if (!open) setDeleteSessionStep(0);
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-destructive mb-1">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <DialogTitle className="text-lg sm:text-xl">
+                Final Confirmation
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-sm text-muted-foreground pt-1">
+              This action cannot be undone. Are you 100% sure you want to delete Session #{selectedSession}?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-3">
+            <Label className="text-xs font-medium text-muted-foreground">
+              To confirm deletion, please type <span className="font-bold text-destructive">delete</span> below:
+            </Label>
+            <Input
+              value={deleteSessionInput}
+              onChange={(e) => setDeleteSessionInput(e.target.value)}
+              placeholder='Type "delete" to confirm'
+              className="h-11 border-destructive/40 focus-visible:ring-destructive"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteSessionStep(0)}
+              className="h-10 sm:h-11"
+              disabled={isDeletingSession}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteStep2}
+              className="h-10 sm:h-11"
+              disabled={
+                isDeletingSession ||
+                deleteSessionInput.trim().toLowerCase() !== "delete"
+              }
+            >
+              {isDeletingSession ? (
+                <span className="flex items-center gap-2">
+                  <Loader className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </span>
+              ) : (
+                "Yes, Delete Session"
+              )}
             </Button>
           </div>
         </DialogContent>

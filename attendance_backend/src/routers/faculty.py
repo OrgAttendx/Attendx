@@ -378,6 +378,41 @@ async def get_session_by_id(session_id: int, current_user: dict = Depends(requir
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+
+@router.delete("/api/faculty/sessions/{session_id}")
+async def delete_session(session_id: int, current_user: dict = Depends(require_faculty)):
+    try:
+        async with engine.begin() as conn:
+            owner_sql = text(
+                """
+                SELECT s.session_id, c.faculty_id
+                FROM attendance_sessions s
+                JOIN classes c ON s.class_id = c.class_id
+                WHERE s.session_id = :session_id
+                """
+            )
+            sess_row = (await conn.execute(owner_sql, {"session_id": session_id})).fetchone()
+            if not sess_row:
+                raise HTTPException(status_code=404, detail="Session not found")
+
+            if sess_row.faculty_id != current_user["user_id"]:
+                raise HTTPException(status_code=403, detail="Access denied")
+
+            del_records_sql = text("DELETE FROM attendance_records WHERE session_id = :session_id")
+            await conn.execute(del_records_sql, {"session_id": session_id})
+
+            del_session_sql = text("DELETE FROM attendance_sessions WHERE session_id = :session_id")
+            await conn.execute(del_session_sql, {"session_id": session_id})
+
+            return {"message": "Session and associated attendance records deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/faculty/classes/{class_id}/students")
 async def get_class_students(class_id: int, current_user: dict = Depends(require_faculty)):
     try:

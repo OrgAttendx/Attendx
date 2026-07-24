@@ -106,6 +106,12 @@ export const facultyAPI = {
     return data;
   },
 
+  async deleteSession(session_id) {
+    const { data } = await api.delete(`/faculty/sessions/${session_id}`);
+    return data;
+  },
+
+
   /* ------------------ NEW — Sessions By Date ------------------ */
   async getSessionsByDate(class_id, date) {
     const { data } = await api.get(
