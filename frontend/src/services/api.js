@@ -273,4 +273,29 @@ export const studentAPI = {
     });
     return data;
   },
+
+  async leaveClass(class_id) {
+    const user = getUser();
+    if (!user?.user_id) throw new Error("Not logged in as student");
+
+    const { data } = await api.delete(`/student/classes/${class_id}`, {
+      params: { student_id: user.user_id },
+    });
+    return data;
+  },
+
+  async updateClassDetails(class_id, roll_number, section) {
+    const user = getUser();
+    if (!user?.user_id) throw new Error("Not logged in as student");
+
+    const payload = {
+      student_id: user.user_id,
+      roll_number,
+      section: section ? section.trim() : null,
+    };
+
+    const { data } = await api.put(`/student/classes/${class_id}/details`, payload);
+    return data;
+  },
 };
+

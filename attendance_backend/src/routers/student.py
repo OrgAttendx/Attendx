@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
 from src.core.database import engine
 from src.core.utils import calculate_distance
-from src.models.schemas import JoinClassRequest, SubmitAttendanceCode
+from src.models.schemas import JoinClassRequest, SubmitAttendanceCode, UpdateStudentClassDetailsRequest
 from src.core.security import require_student
 from src import queries
 from typing import Optional
@@ -273,3 +273,68 @@ async def get_student_attendance_history(class_id: int, student_id: int, current
             return [dict(r._mapping) for r in result]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/student/classes/{class_id}")
+async def leave_class(class_id: int, student_id: int, current_user: dict = Depends(require_student)):
+    # Ownership check: a student can only leave class for themselves
+    if current_user["user_id"] != student_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        async with engine.begin() as conn:
+            check_sql = text("SELECT 1 FROM class_enrollments WHERE student_id = :sid AND class_id = :cid")
+            enrolled = (await conn.execute(check_sql, {"sid": student_id, "cid": class_id})).fetchone()
+            if not enrolled:
+                raise HTTPException(status_code=404, detail="Student is not enrolled in this class")
+
+            delete_sql = text("DELETE FROM class_enrollments WHERE student_id = :sid AND class_id = :cid")
+            await conn.execute(delete_sql, {"sid": student_id, "cid": class_id})
+            return {"message": "Successfully left the class"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/student/classes/{class_id}/details")
+async def update_student_class_details(
+    class_id: int,
+    payload: UpdateStudentClassDetailsRequest,
+    current_user: dict = Depends(require_student)
+):
+    # Ownership check: a student can only edit their own class details
+    if current_user["user_id"] != payload.student_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        roll_number_val = (payload.roll_number or "").strip()
+        if not roll_number_val:
+            raise HTTPException(status_code=400, detail="Roll number is required")
+
+        section_val = (payload.section or "").strip() or None
+        if section_val:
+            section_val = section_val[:50]
+
+        async with engine.begin() as conn:
+            check_sql = text("SELECT 1 FROM class_enrollments WHERE student_id = :sid AND class_id = :cid")
+            enrolled = (await conn.execute(check_sql, {"sid": payload.student_id, "cid": class_id})).fetchone()
+            if not enrolled:
+                raise HTTPException(status_code=404, detail="Student is not enrolled in this class")
+
+            update_sql = text(
+                """
+                UPDATE class_enrollments
+                SET roll_number = :roll_number, section = :section
+                WHERE student_id = :sid AND class_id = :cid
+                """
+            )
+            await conn.execute(update_sql, {
+                "roll_number": roll_number_val,
+                "section": section_val,
+                "sid": payload.student_id,
+                "cid": class_id
+            })
+            return {"message": "Class details updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
