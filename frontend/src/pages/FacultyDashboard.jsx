@@ -294,6 +294,13 @@ const FacultyDashboard = () => {
   const [sessionLocation, setSessionLocation] = useState(null);
   const [diameterMeters, setDiameterMeters] = useState(500);
 
+  // Helper: validate and clamp diameter to 10..10000 meters (default 500m)
+  const getValidDiameter = (val) => {
+    const num = Number(val);
+    if (isNaN(num) || num <= 0) return 500;
+    return Math.min(10000, Math.max(10, Math.round(num)));
+  };
+
   // Helper: enrich a class with dynamic stats (students count, sessions count, last session time)
   const enrichClassWithStats = async (cls) => {
     try {
@@ -430,10 +437,30 @@ const FacultyDashboard = () => {
       );
 
       let locationData = null;
-      const currentDiameter = Number(diameterMeters) || 200;
+      const currentDiameter = getValidDiameter(diameterMeters);
       const calculatedRadius = Math.max(5, Math.round(currentDiameter / 2));
 
-      if (useLocation && sessionLocation) {
+      if (useLocation) {
+        if (!sessionLocation) {
+          toast({
+            title: "Location Required ⚠️",
+            description: "Please capture your location first, or click 'Start Without Location' (Code-Only Mode) so students can mark attendance using only the code.",
+            variant: "destructive",
+          });
+          setStartingSession(false);
+          return;
+        }
+
+        if (sessionLocation.accuracy > 500) {
+          toast({
+            title: `Location Accuracy Too Low (±${Math.round(sessionLocation.accuracy)}m) ⚠️`,
+            description: "GPS accuracy is too low for geofencing. We suggest starting WITHOUT location (Code-Only Mode) — students will only need the 6-digit code to mark attendance and won't need to capture location!",
+            variant: "destructive",
+          });
+          setStartingSession(false);
+          return;
+        }
+
         locationData = {
           latitude: sessionLocation.latitude,
           longitude: sessionLocation.longitude,
@@ -1213,7 +1240,7 @@ const FacultyDashboard = () => {
                         Allowed Classroom Zone (Diameter)
                       </Label>
                       <span className="text-xs font-semibold text-blue-600 bg-blue-50 dark:bg-blue-950/50 dark:text-blue-400 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
-                        Radius: {Math.round((Number(diameterMeters) || 0) / 2)}m
+                        Radius: {Math.round(getValidDiameter(diameterMeters) / 2)}m
                       </span>
                     </div>
 
@@ -1223,7 +1250,7 @@ const FacultyDashboard = () => {
                           key={d}
                           type="button"
                           size="sm"
-                          variant={Number(diameterMeters) === d ? "default" : "outline"}
+                          variant={getValidDiameter(diameterMeters) === d ? "default" : "outline"}
                           onClick={() => setDiameterMeters(d)}
                           className="min-w-[65px] font-medium"
                         >
@@ -1245,15 +1272,20 @@ const FacultyDashboard = () => {
                         value={diameterMeters}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setDiameterMeters(val === "" ? "" : Math.max(1, parseInt(val, 10) || 0));
-                        }}
-                        onBlur={() => {
-                          if (!diameterMeters || Number(diameterMeters) < 10) {
-                            setDiameterMeters(200);
+                          if (val === "") {
+                            setDiameterMeters("");
+                          } else {
+                            const parsed = parseInt(val, 10);
+                            if (!isNaN(parsed)) {
+                              setDiameterMeters(Math.min(10000, Math.max(1, parsed)));
+                            }
                           }
                         }}
+                        onBlur={() => {
+                          setDiameterMeters(getValidDiameter(diameterMeters));
+                        }}
                         className="w-28 text-sm font-semibold"
-                        placeholder="e.g. 200"
+                        placeholder="e.g. 500"
                       />
                       <span className="text-xs font-medium text-muted-foreground">
                         meters
@@ -1261,13 +1293,24 @@ const FacultyDashboard = () => {
                     </div>
 
                     <p className="text-xs text-muted-foreground pt-1">
-                      Students must be within the <strong>{diameterMeters || 0}m diameter zone</strong> (up to {Math.round((Number(diameterMeters) || 0) / 2)}m from your center location).
+                      Students must be within the <strong>{getValidDiameter(diameterMeters)}m diameter zone</strong> (up to {Math.round(getValidDiameter(diameterMeters) / 2)}m from your center location).
                       GPS accuracy (±
                       {sessionLocation.accuracy
                         ? Math.round(sessionLocation.accuracy)
                         : "?"}
                       m) is automatically accounted for.
                     </p>
+
+                    {sessionLocation.accuracy > 500 && (
+                      <div className="rounded-xl border border-amber-400/80 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-1.5 text-xs text-amber-900 dark:text-amber-200">
+                        <p className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                          <span>💡 Recommendation: Code-Only Mode</span>
+                        </p>
+                        <p>
+                          GPS accuracy is currently low (±{Math.round(sessionLocation.accuracy)}m). We recommend clicking <strong>"Start Without Location"</strong> below — students can then mark attendance instantly using only the 6-digit code without needing location verification!
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1275,18 +1318,18 @@ const FacultyDashboard = () => {
 
             <div className="sticky bottom-0 flex flex-col gap-2 border-t border-border bg-background px-4 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-6">
               <Button
-                variant="outline"
-                className="w-full sm:w-auto"
+                variant={sessionLocation && sessionLocation.accuracy > 500 ? "default" : "outline"}
+                className="w-full sm:w-auto font-medium"
                 onClick={() => proceedWithSessionStart(false)}
                 disabled={startingSession}
               >
-                Start Without Location
+                Start Without Location (Code-Only)
               </Button>
               <Button
-                variant="default"
-                className="w-full sm:w-auto"
+                variant={sessionLocation && sessionLocation.accuracy > 500 ? "outline" : "default"}
+                className="w-full sm:w-auto font-medium"
                 onClick={() => proceedWithSessionStart(true)}
-                disabled={!sessionLocation || startingSession}
+                disabled={!sessionLocation || sessionLocation.accuracy > 500 || startingSession}
               >
                 {startingSession ? "Starting..." : "Start with Location"}
               </Button>
