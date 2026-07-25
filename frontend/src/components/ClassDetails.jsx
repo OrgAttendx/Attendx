@@ -1,6 +1,7 @@
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { facultyAPI } from "@/services/api";
 import { attendanceApi } from "@/api/attendance";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,18 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, ChevronDown, Search, X, UserMinus, Pencil, Trash2, Clock, AlertTriangle, Loader } from "lucide-react";
+import {
+  Download,
+  ChevronDown,
+  Search,
+  X,
+  UserMinus,
+  Trash2,
+  AlertTriangle,
+  Loader,
+  Calendar as CalendarIcon,
+  CalendarX,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   DropdownMenu,
@@ -32,23 +44,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-
 const ClassDetails = ({ classItem }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [date, setDate] = useState(new Date());
-  const [month, setMonth] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-  );
-
-  const selectedDate = date.toLocaleDateString("en-CA");
-
-  const [sessions, setSessions] = useState([]);
+  // Selection states
+  const [selectedDate, setSelectedDate] = useState("");
   const [selectedSession, setSelectedSession] = useState(null);
 
-  const [rows, setRows] = useState([]);
-  const [totals, setTotals] = useState({ present: 0, late: 0, absent: 0 });
-  const [loading, setLoading] = useState(true);
+  // Search & row updating states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [rowUpdating, setRowUpdating] = useState({});
 
   // Date range export states
   const [showDateRangeDialog, setShowDateRangeDialog] = useState(false);
@@ -57,16 +63,207 @@ const ClassDetails = ({ classItem }) => {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
 
-  const pollRef = useRef(null);
-
-  const [rowUpdating, setRowUpdating] = useState({});
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Delete Session state (2-step confirmation)
+  // Delete Session confirmation state
   const [deleteSessionStep, setDeleteSessionStep] = useState(0); // 0: closed, 1: step 1, 2: step 2
   const [deleteSessionInput, setDeleteSessionInput] = useState("");
-  const [isDeletingSession, setIsDeletingSession] = useState(false);
 
+  /* ---------------------------------------------------
+     REACT QUERY: Fetch all sessions & attendance at once
+  --------------------------------------------------- */
+  const {
+    data: classSessionsData,
+    isLoading: loading,
+    isError,
+  } = useQuery({
+    queryKey: ["class-sessions", classItem?.class_id],
+    queryFn: () => facultyAPI.getAllSessionsWithAttendance(classItem?.class_id),
+    enabled: !!classItem?.class_id,
+    staleTime: 10000,
+    refetchOnWindowFocus: false,
+  });
+
+  const rawSessions = useMemo(() => {
+    return Array.isArray(classSessionsData?.sessions) ? classSessionsData.sessions : [];
+  }, [classSessionsData]);
+
+  /* ---------------------------------------------------
+     DERIVED DATA: Distinct session dates
+  --------------------------------------------------- */
+  const sessionDates = useMemo(() => {
+    const map = new Map();
+    rawSessions.forEach((s) => {
+      const dateStr = new Date(s.start_time).toLocaleDateString("en-CA");
+      if (!map.has(dateStr)) {
+        map.set(dateStr, { date: dateStr, session_count: 0, latest_start_time: s.start_time });
+      }
+      const item = map.get(dateStr);
+      item.session_count += 1;
+    });
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }, [rawSessions]);
+
+  // Auto-select latest date if none selected or invalid
+  useEffect(() => {
+    if (sessionDates.length > 0) {
+      if (!selectedDate || !sessionDates.some((d) => d.date === selectedDate)) {
+        setSelectedDate(sessionDates[0].date);
+      }
+    } else {
+      setSelectedDate("");
+      setSelectedSession(null);
+    }
+  }, [sessionDates]);
+
+  /* ---------------------------------------------------
+     DERIVED DATA: Sessions for current selected date
+  --------------------------------------------------- */
+  const sessions = useMemo(() => {
+    if (!selectedDate) return [];
+    return rawSessions
+      .filter((s) => new Date(s.start_time).toLocaleDateString("en-CA") === selectedDate)
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  }, [rawSessions, selectedDate]);
+
+  // Auto-select latest session for selectedDate
+  useEffect(() => {
+    if (sessions.length > 0) {
+      if (!selectedSession || !sessions.some((s) => s.session_id === selectedSession)) {
+        setSelectedSession(sessions[sessions.length - 1].session_id);
+      }
+    } else {
+      setSelectedSession(null);
+    }
+  }, [sessions]);
+
+  /* ---------------------------------------------------
+     DERIVED DATA: Active session records & totals
+  --------------------------------------------------- */
+  const activeSession = useMemo(() => {
+    return rawSessions.find((s) => s.session_id === selectedSession) || null;
+  }, [rawSessions, selectedSession]);
+
+  const rows = useMemo(() => {
+    if (!activeSession) return [];
+    const recs = Array.isArray(activeSession.records) ? activeSession.records : [];
+    return [...recs].sort((a, b) => {
+      const sectionA = (a.section || "").toUpperCase();
+      const sectionB = (b.section || "").toUpperCase();
+      if (sectionA && sectionB && sectionA !== sectionB) {
+        return sectionA.localeCompare(sectionB, undefined, { numeric: true });
+      }
+      if (sectionA && !sectionB) return -1;
+      if (!sectionA && sectionB) return 1;
+      const rollA = a.roll_number || "";
+      const rollB = b.roll_number || "";
+      if (rollA && rollB) {
+        const rollCompare = rollA.localeCompare(rollB, undefined, { numeric: true });
+        if (rollCompare !== 0) return rollCompare;
+      }
+      return (a.student_name || "").localeCompare(b.student_name || "");
+    });
+  }, [activeSession]);
+
+  const totals = useMemo(() => {
+    if (activeSession?.totals) {
+      const t = activeSession.totals;
+      return { present: t.present + (t.late || 0), late: 0, absent: t.absent };
+    }
+    if (!activeSession) return { present: 0, late: 0, absent: 0 };
+    const recs = Array.isArray(activeSession.records) ? activeSession.records : [];
+    const present = recs.filter((x) => x.status === "PRESENT" || x.status === "LATE").length;
+    const absent = recs.filter((x) => x.status === "ABSENT").length;
+    return { present, late: 0, absent };
+  }, [activeSession]);
+
+  const filteredRows = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return rows;
+    return rows.filter((r) => {
+      return (
+        (r.student_name && r.student_name.toLowerCase().includes(query)) ||
+        (r.roll_number && r.roll_number.toLowerCase().includes(query)) ||
+        (r.section && r.section.toLowerCase().includes(query))
+      );
+    });
+  }, [rows, searchQuery]);
+
+  /* ---------------------------------------------------
+     REACT QUERY MUTATIONS
+  --------------------------------------------------- */
+  const deleteSessionMutation = useMutation({
+    mutationFn: (sessionId) => facultyAPI.deleteSession(sessionId),
+    onSuccess: (_, deletedId) => {
+      toast({
+        title: "Session Deleted 🗑️",
+        description: "The session and its attendance records have been deleted.",
+      });
+      setDeleteSessionStep(0);
+      setDeleteSessionInput("");
+
+      // Update React Query Cache immediately
+      queryClient.setQueryData(["class-sessions", classItem.class_id], (old) => {
+        if (!old?.sessions) return old;
+        return {
+          ...old,
+          sessions: old.sessions.filter((s) => s.session_id !== deletedId),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ["class-sessions", classItem.class_id] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Error Deleting Session",
+        description: err.response?.data?.detail || err.message || "Failed to delete session.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ sessionId, studentId, newStatus }) =>
+      attendanceApi.markManualAttendance(sessionId, studentId, newStatus),
+    onMutate: async ({ sessionId, studentId, newStatus }) => {
+      setRowUpdating((prev) => ({ ...prev, [studentId]: true }));
+      await queryClient.cancelQueries({ queryKey: ["class-sessions", classItem.class_id] });
+      const previousData = queryClient.getQueryData(["class-sessions", classItem.class_id]);
+
+      queryClient.setQueryData(["class-sessions", classItem.class_id], (old) => {
+        if (!old?.sessions) return old;
+        return {
+          ...old,
+          sessions: old.sessions.map((s) => {
+            if (s.session_id !== sessionId) return s;
+            const recs = (s.records || []).map((r) => {
+              if (r.student_id !== studentId) return r;
+              return {
+                ...r,
+                status: newStatus,
+                marked_at: new Date().toISOString().replace("Z", ""),
+              };
+            });
+            const present = recs.filter((x) => x.status === "PRESENT" || x.status === "LATE").length;
+            const absent = recs.filter((x) => x.status === "ABSENT").length;
+            return { ...s, records: recs, totals: { present, late: 0, absent } };
+          }),
+        };
+      });
+      return { previousData };
+    },
+    onError: (err, _, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(["class-sessions", classItem.class_id], context.previousData);
+      }
+      toast({
+        title: "Error",
+        description: err.message || "Failed to update attendance status.",
+        variant: "destructive",
+      });
+    },
+    onSettled: (_, __, { studentId }) => {
+      setRowUpdating((prev) => ({ ...prev, [studentId]: false }));
+      queryClient.invalidateQueries({ queryKey: ["class-sessions", classItem.class_id] });
+    },
+  });
 
   const handleOpenDeleteSession = () => {
     setDeleteSessionInput("");
@@ -78,9 +275,8 @@ const ClassDetails = ({ classItem }) => {
     setDeleteSessionStep(2);
   };
 
-  const handleConfirmDeleteStep2 = async () => {
+  const handleConfirmDeleteStep2 = () => {
     if (!selectedSession) return;
-
     if (deleteSessionInput.trim().toLowerCase() !== "delete") {
       toast({
         title: "Validation Error",
@@ -89,106 +285,30 @@ const ClassDetails = ({ classItem }) => {
       });
       return;
     }
-
-    try {
-      setIsDeletingSession(true);
-      await facultyAPI.deleteSession(selectedSession);
-      toast({
-        title: "Session Deleted 🗑️",
-        description: "The session and its attendance records have been deleted.",
-      });
-      setDeleteSessionStep(0);
-      setDeleteSessionInput("");
-      setSelectedSession(null);
-      loadSessions();
-    } catch (err) {
-      toast({
-        title: "Error Deleting Session",
-        description: err.response?.data?.detail || err.message || "Failed to delete session.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDeletingSession(false);
-    }
+    deleteSessionMutation.mutate(selectedSession);
   };
 
-
-
-  const handleUpdateStatus = async (studentId, studentName, newStatus) => {
+  const handleUpdateStatus = (studentId, studentName, newStatus) => {
     if (!selectedSession || !studentId) return;
-    
-    setRowUpdating(prev => ({ ...prev, [studentId]: true }));
-    try {
-      await attendanceApi.markManualAttendance(selectedSession, studentId, newStatus);
-      
-      // Update local table data instantly
-      setRows(prevRows => 
-        prevRows.map(row => 
-          row.student_id === studentId 
-            ? { ...row, status: newStatus, marked_at: new Date().toISOString().replace('Z', '') }
-            : row
-        )
-      );
-
-      // Recalculate totals
-      setRows(currentRows => {
-        const updatedRows = currentRows.map(row => 
-          row.student_id === studentId 
-            ? { ...row, status: newStatus }
-            : row
-        );
-        const present = updatedRows.filter(x => x.status === "PRESENT" || x.status === "LATE").length;
-        const absent = updatedRows.filter(x => x.status === "ABSENT").length;
-        setTotals({ present, late: 0, absent });
-        return updatedRows;
-      });
-
-      toast({
-        title: "Attendance Updated",
-        description: `Successfully marked ${studentName} as ${newStatus}.`,
-      });
-    } catch (err) {
-      console.error("[ClassDetails] Error updating attendance:", err);
-      toast({
-        title: "Error",
-        description: err.message || "Failed to update attendance status.",
-        variant: "destructive",
-      });
-    } finally {
-      setRowUpdating(prev => ({ ...prev, [studentId]: false }));
-    }
+    updateStatusMutation.mutate({ sessionId: selectedSession, studentId, newStatus });
   };
-
-  const filteredRows = rows.filter((r) => {
-    const query = searchQuery.toLowerCase().trim();
-    if (!query) return true;
-    return (
-      (r.student_name && r.student_name.toLowerCase().includes(query)) ||
-      (r.roll_number && r.roll_number.toLowerCase().includes(query)) ||
-      (r.section && r.section.toLowerCase().includes(query))
-    );
-  });
 
   /* ---------------------------------------------------
-     Export attendance to Excel
+     EXPORT FUNCTIONS
   --------------------------------------------------- */
-  // Helper to format rows for Excel
-  const formatRowsForExport = (rows, sessionDate, sessionTime) => {
-    // 1. Group by Section
+  const formatRowsForExport = (exportRowsList, sessionDate, sessionTime) => {
     const sections = {};
-    rows.forEach((r) => {
+    exportRowsList.forEach((r) => {
       const sec = r.section || "Unassigned";
       if (!sections[sec]) sections[sec] = [];
       sections[sec].push(r);
     });
 
     const exportRows = [];
-
-    // Header Info
     exportRows.push({ "Student Name": `Class: ${classItem.class_name}` });
     exportRows.push({ "Student Name": `Date: ${sessionDate}` });
     exportRows.push({ "Student Name": `Time: ${sessionTime}` });
-    exportRows.push({}); // spacer
+    exportRows.push({});
 
     const colHeaders = {
       "Roll Number": "Roll Number",
@@ -198,34 +318,28 @@ const ClassDetails = ({ classItem }) => {
       "Marked At": "Marked At",
     };
 
-    // 2. Process each section
     Object.keys(sections)
       .sort()
       .forEach((sec) => {
         const students = sections[sec];
-
-        // Separation
         const presentList = students
-          .filter(s => s.status === 'PRESENT' || s.status === 'LATE')
-          .sort((a, b) => a.student_name.localeCompare(b.student_name));
-          
+          .filter((s) => s.status === "PRESENT" || s.status === "LATE")
+          .sort((a, b) => (a.student_name || "").localeCompare(b.student_name || ""));
         const absentList = students
-          .filter(s => s.status === 'ABSENT' || !s.status)
-          .sort((a, b) => a.student_name.localeCompare(b.student_name));
+          .filter((s) => s.status === "ABSENT" || !s.status)
+          .sort((a, b) => (a.student_name || "").localeCompare(b.student_name || ""));
 
-        // --- SECTION HEADER ---
         exportRows.push({ "Student Name": `SECTION: ${sec}` });
-        
-        // --- PRESENT BLOCK ---
+
         if (presentList.length > 0) {
-           exportRows.push({ "Student Name": `--- PRESENT (${presentList.length}) ---` });
-           exportRows.push(colHeaders);
-           presentList.forEach(r => {
-             exportRows.push({
+          exportRows.push({ "Student Name": `--- PRESENT (${presentList.length}) ---` });
+          exportRows.push(colHeaders);
+          presentList.forEach((r) => {
+            exportRows.push({
               "Roll Number": r.roll_number || "—",
               Section: r.section || "—",
               "Student Name": r.student_name,
-              Status: r.status === "LATE" ? "PRESENT" : "PRESENT",
+              Status: "PRESENT",
               "Marked At": r.marked_at
                 ? new Date(r.marked_at + "Z").toLocaleString("en-IN", {
                     hour: "2-digit",
@@ -234,38 +348,35 @@ const ClassDetails = ({ classItem }) => {
                   })
                 : "—",
             });
-           });
-           exportRows.push({}); // spacer
+          });
+          exportRows.push({});
         }
 
-        // --- ABSENT BLOCK ---
         if (absentList.length > 0) {
-           exportRows.push({ "Student Name": `--- ABSENT (${absentList.length}) ---` });
-           exportRows.push(colHeaders);
-           absentList.forEach(r => {
-             exportRows.push({
+          exportRows.push({ "Student Name": `--- ABSENT (${absentList.length}) ---` });
+          exportRows.push(colHeaders);
+          absentList.forEach((r) => {
+            exportRows.push({
               "Roll Number": r.roll_number || "—",
               Section: r.section || "—",
               "Student Name": r.student_name,
               Status: "ABSENT",
               "Marked At": "—",
             });
-           });
-           exportRows.push({}); // spacer
+          });
+          exportRows.push({});
         }
 
-        // Section Summary 
         exportRows.push({ "Student Name": `Total Present: ${presentList.length}` });
         exportRows.push({ "Student Name": `Total Absent: ${absentList.length}` });
         exportRows.push({ "Student Name": `Total Strength: ${presentList.length + absentList.length}` });
-        exportRows.push({}); // large spacer between sections
-        exportRows.push({}); 
+        exportRows.push({});
+        exportRows.push({});
       });
 
-      return exportRows;
+    return exportRows;
   };
 
-  // Export current session only
   const exportCurrentSession = () => {
     if (rows.length === 0) {
       toast({
@@ -285,31 +396,15 @@ const ClassDetails = ({ classItem }) => {
         })
       : "Unknown Time";
 
-    // Use the new helper
     const exportData = formatRowsForExport(rows, selectedDate, sessionTime);
-
-    // Create worksheet
     const ws = XLSX.utils.json_to_sheet(exportData, { skipHeader: true });
+    ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 15 }, { wch: 20 }];
 
-    // Auto-width columns roughly
-    const wscols = [
-      { wch: 15 }, // Roll
-      { wch: 10 }, // Section
-      { wch: 30 }, // Name
-      { wch: 15 }, // Status
-      { wch: 20 }, // Marked At
-    ];
-    ws["!cols"] = wscols;
-
-    // Create workbook
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Attendance");
 
-    // Generate filename
     const timeStr = sessionTime.replace(/:/g, "-");
     const filename = `${classItem.class_name}_${selectedDate}_${timeStr}.xlsx`;
-
-    // Download file
     XLSX.writeFile(wb, filename);
 
     toast({
@@ -318,8 +413,7 @@ const ClassDetails = ({ classItem }) => {
     });
   };
 
-  // Export all sessions for selected date
-  const exportCurrentDate = async () => {
+  const exportCurrentDate = () => {
     if (sessions.length === 0) {
       toast({
         title: "No Data",
@@ -334,41 +428,19 @@ const ClassDetails = ({ classItem }) => {
       setExportProgress(`Exporting ${sessions.length} session(s)...`);
       const wb = XLSX.utils.book_new();
 
-      // Fetch attendance for each session with progress
       for (let i = 0; i < sessions.length; i++) {
         const session = sessions[i];
-        setExportProgress(
-          `Processing session ${i + 1} of ${sessions.length}...`
-        );
-
-        const data = await facultyAPI.getSessionAttendanceFlat(
-          session.session_id
-        );
-        const recs = Array.isArray(data?.records) ? data.records : [];
-
-        // Get time
+        const recs = Array.isArray(session.records) ? session.records : [];
         const sTime = new Date(session.start_time).toLocaleTimeString("en-IN", {
-           hour: "2-digit",
-           minute: "2-digit",
-           hour12: false
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
         });
 
-        // Use helper
         const exportData = formatRowsForExport(recs, selectedDate, sTime);
-
         const ws = XLSX.utils.json_to_sheet(exportData, { skipHeader: true });
-        
-        // Auto-width columns
-        const wscols = [
-          { wch: 15 }, 
-          { wch: 10 }, 
-          { wch: 30 }, 
-          { wch: 15 }, 
-          { wch: 20 }, 
-        ];
-        ws["!cols"] = wscols;
+        ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 15 }, { wch: 20 }];
 
-        // Use index to ensure unique sheet names
         const sheetName = `Session_${i + 1}`;
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
@@ -392,13 +464,11 @@ const ClassDetails = ({ classItem }) => {
     }
   };
 
-  // Export date range
-  const exportDateRange = async () => {
+  const exportDateRange = () => {
     try {
       setExportLoading(true);
-      setExportProgress("Loading sessions...");
+      setExportProgress("Processing date range...");
 
-      // Get all dates in range
       const start = new Date(startDate);
       const end = new Date(endDate);
 
@@ -413,24 +483,7 @@ const ClassDetails = ({ classItem }) => {
         return;
       }
 
-      // Fetch all sessions at once using the optimized endpoint
-      const allData = await facultyAPI.getAllSessionsWithAttendance(
-        classItem.class_id
-      );
-
-      if (!allData || !allData.sessions || allData.sessions.length === 0) {
-        toast({
-          title: "No Data",
-          description: "No sessions found for this class.",
-          variant: "destructive",
-        });
-        setExportLoading(false);
-        setExportProgress("");
-        return;
-      }
-
-      // Filter sessions within the date range
-      const filteredSessions = allData.sessions.filter((session) => {
+      const filteredSessions = rawSessions.filter((session) => {
         const sessionDate = new Date(session.start_time);
         return sessionDate >= start && sessionDate <= end;
       });
@@ -448,13 +501,8 @@ const ClassDetails = ({ classItem }) => {
 
       const wb = XLSX.utils.book_new();
 
-      // Process filtered sessions with progress updates
       for (let i = 0; i < filteredSessions.length; i++) {
         const session = filteredSessions[i];
-        setExportProgress(
-          `Processing session ${i + 1} of ${filteredSessions.length}...`
-        );
-
         const recs = Array.isArray(session.records) ? session.records : [];
 
         const exportData = recs.map((r) => ({
@@ -471,9 +519,8 @@ const ClassDetails = ({ classItem }) => {
             : "—",
         }));
 
-        // Add summary from totals
-        const totals = session.totals || { present: 0, late: 0, absent: 0 };
-        const present = totals.present + totals.late;
+        const sTotals = session.totals || { present: 0, late: 0, absent: 0 };
+        const present = sTotals.present + (sTotals.late || 0);
 
         exportData.push({});
         exportData.push({
@@ -494,15 +541,12 @@ const ClassDetails = ({ classItem }) => {
           "Roll Number": "",
           Section: "",
           "Student Name": "Absent",
-          Status: totals.absent,
+          Status: sTotals.absent,
           "Marked At": "",
         });
 
         const ws = XLSX.utils.json_to_sheet(exportData);
-        const dateStr = new Date(session.start_time).toLocaleDateString(
-          "en-CA"
-        );
-        // Use index to ensure unique sheet names
+        const dateStr = new Date(session.start_time).toLocaleDateString("en-CA");
         const sheetName = `${dateStr}_S${i + 1}`.substring(0, 31);
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
@@ -518,7 +562,6 @@ const ClassDetails = ({ classItem }) => {
       });
       setShowDateRangeDialog(false);
     } catch (error) {
-      console.error(error);
       toast({
         title: "Error",
         description: "Failed to export date range.",
@@ -530,18 +573,12 @@ const ClassDetails = ({ classItem }) => {
     }
   };
 
-  // Export all dates (all time)
-  const exportAllDates = async () => {
+  const exportAllDates = () => {
     try {
       setExportLoading(true);
-      setExportProgress("Loading all sessions...");
+      setExportProgress("Preparing full history export...");
 
-      // Use the new optimized endpoint that fetches everything in one query
-      const data = await facultyAPI.getAllSessionsWithAttendance(
-        classItem.class_id
-      );
-
-      if (!data || !data.sessions || data.sessions.length === 0) {
+      if (rawSessions.length === 0) {
         toast({
           title: "No Data",
           description: "No sessions found for this class.",
@@ -553,18 +590,10 @@ const ClassDetails = ({ classItem }) => {
       }
 
       const wb = XLSX.utils.book_new();
-      const sessions = data.sessions;
       const usedSheetNames = new Set();
 
-
-      // Process sessions with progress updates
-      for (let i = 0; i < sessions.length; i++) {
-        const session = sessions[i];
-        setExportProgress(
-          `Processing session ${i + 1} of ${sessions.length}...`
-        );
-
-
+      for (let i = 0; i < rawSessions.length; i++) {
+        const session = rawSessions[i];
         const recs = Array.isArray(session.records) ? session.records : [];
 
         const exportData = recs.map((r) => ({
@@ -581,9 +610,8 @@ const ClassDetails = ({ classItem }) => {
             : "—",
         }));
 
-        // Add summary from totals
-        const totals = session.totals || { present: 0, late: 0, absent: 0 };
-        const present = totals.present + totals.late; // Combine present and late
+        const sTotals = session.totals || { present: 0, late: 0, absent: 0 };
+        const present = sTotals.present + (sTotals.late || 0);
 
         exportData.push({});
         exportData.push({
@@ -604,19 +632,16 @@ const ClassDetails = ({ classItem }) => {
           "Roll Number": "",
           Section: "",
           "Student Name": "Absent",
-          Status: totals.absent,
+          Status: sTotals.absent,
           "Marked At": "",
         });
 
         const ws = XLSX.utils.json_to_sheet(exportData);
-        const dateStr = new Date(session.start_time).toLocaleDateString(
-          "en-CA"
-        );
+        const dateStr = new Date(session.start_time).toLocaleDateString("en-CA");
         const timeStr = new Date(session.start_time)
           .toLocaleTimeString("en-US", { hour12: false })
           .replace(/:/g, "-");
 
-        // Create unique sheet name by appending counter if duplicate
         let baseSheetName = `${dateStr}_${timeStr}`.substring(0, 28);
         let sheetName = baseSheetName;
         let counter = 1;
@@ -630,16 +655,14 @@ const ClassDetails = ({ classItem }) => {
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
 
-
       const filename = `${classItem.class_name}_AllSessions_Complete.xlsx`;
       XLSX.writeFile(wb, filename);
 
       toast({
         title: "Success",
-        description: `Exported ${sessions.length} session(s) successfully.`,
+        description: `Exported ${rawSessions.length} session(s) successfully.`,
       });
     } catch (error) {
-      console.error(error);
       toast({
         title: "Error",
         description: "Failed to export all sessions. " + error.message,
@@ -651,123 +674,11 @@ const ClassDetails = ({ classItem }) => {
     }
   };
 
-  /* ---------------------------------------------------
-     STEP 1 — Load ALL sessions on the selected date
-  --------------------------------------------------- */
-  const loadSessions = async () => {
-    try {
-      setLoading(true);
-      const list = await facultyAPI.getSessionsByDate(
-        classItem.class_id,
-        selectedDate
-      );
-
-      setSessions(list);
-
-      if (list.length > 0) {
-        const latest = list[list.length - 1].session_id;
-        setSelectedSession(latest); // auto-select latest
-      } else {
-        setSelectedSession(null);
-        setRows([]);
-        setTotals({ present: 0, late: 0, absent: 0 });
-        setLoading(false); // Clear loading when no sessions
-      }
-    } catch (err) {
-      console.error("[ClassDetails] Error loading sessions:", err);
-      toast({
-        title: "Error",
-        description: "Failed to load sessions.",
-        variant: "destructive",
-      });
-      setLoading(false); // Clear loading on error
-    }
-  };
-
-  /* ---------------------------------------------------
-     STEP 2 — Load attendance for ONE specific session
-  --------------------------------------------------- */
-  const loadSessionAttendance = async (sessionId, silent = false) => {
-    if (!sessionId) return;
-
-    try {
-      if (!silent) setLoading(true);
-
-      const data = await facultyAPI.getSessionAttendanceFlat(sessionId);
-
-      const recs = Array.isArray(data?.records) ? data.records : (Array.isArray(data) ? data : []);
-
-      // Count LATE as PRESENT
-      const present = recs.filter(
-        (x) => x.status === "PRESENT" || x.status === "LATE"
-      ).length;
-      const absent = recs.filter((x) => x.status === "ABSENT").length;
-
-      setTotals({ present, late: 0, absent });
-      setRows(
-        recs.sort((a, b) => {
-          const sectionA = (a.section || "").toUpperCase();
-          const sectionB = (b.section || "").toUpperCase();
-          if (sectionA && sectionB && sectionA !== sectionB) {
-            return sectionA.localeCompare(sectionB, undefined, {
-              numeric: true,
-            });
-          }
-          if (sectionA && !sectionB) return -1;
-          if (!sectionA && sectionB) return 1;
-          // Sort by roll number first, then by name if roll numbers are equal or missing
-          const rollA = a.roll_number || "";
-          const rollB = b.roll_number || "";
-          if (rollA && rollB) {
-            const rollCompare = rollA.localeCompare(rollB, undefined, {
-              numeric: true,
-            });
-            if (rollCompare !== 0) return rollCompare;
-          }
-          // If roll numbers are the same or missing, sort by name
-          return a.student_name.localeCompare(b.student_name);
-        })
-      );
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: "Failed to load attendance.",
-        variant: "destructive",
-      });
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
-
-  /* ---------------------------------------------------
-     Load sessions whenever date changes
-  --------------------------------------------------- */
-  useEffect(() => {
-    loadSessions();
-  }, [selectedDate]);
-
-  /* ---------------------------------------------------
-     Load attendance whenever selectedSession changes
-  --------------------------------------------------- */
-  useEffect(() => {
-    if (!selectedSession) return;
-
-    loadSessionAttendance(selectedSession, false);
-
-    if (pollRef.current) clearInterval(pollRef.current);
-
-    // Live update every 10s
-    pollRef.current = setInterval(() => {
-      loadSessionAttendance(selectedSession, true);
-    }, 10000);
-
-    return () => pollRef.current && clearInterval(pollRef.current);
-  }, [selectedSession]);
-
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[300px]">
-        Loading…
+      <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-muted-foreground">
+        <Loader className="h-7 w-7 animate-spin text-primary" />
+        <span className="text-sm font-medium">Loading class attendance data...</span>
       </div>
     );
   }
@@ -779,20 +690,90 @@ const ClassDetails = ({ classItem }) => {
       </h2>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Calendar */}
-        <div className="lg:col-span-1 flex justify-center">
-          <Calendar
-            mode="single"
-            month={month}
-            onMonthChange={setMonth}
-            selected={date}
-            onSelect={(d) => {
-              if (!d) return;
-              setDate(d);
-              setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
-            }}
-            className="rounded-md border w-full max-w-sm"
-          />
+        {/* Session Dates List */}
+        <div className="lg:col-span-1">
+          <Card className="h-full flex flex-col border shadow-sm">
+            <CardHeader className="pb-3 border-b bg-muted/20">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <CalendarIcon className="h-4.5 w-4.5 text-primary" />
+                  Session Dates
+                </CardTitle>
+                <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
+                  {sessionDates.length} {sessionDates.length === 1 ? "Date" : "Dates"}
+                </Badge>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-3 flex-1 overflow-y-auto max-h-[520px]">
+              {sessionDates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-muted-foreground rounded-lg border border-dashed bg-muted/10 my-2">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-3">
+                    <CalendarX className="h-6 w-6 text-muted-foreground/70" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">No Sessions Recorded</p>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
+                    There are no recorded attendance sessions for this class yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sessionDates.map((item) => {
+                    const dateStr = item.date;
+                    const count = item.session_count;
+                    const isSelected = selectedDate === dateStr;
+
+                    const dateObj = new Date(dateStr + "T00:00:00");
+                    const formattedDate = dateObj.toLocaleDateString("en-IN", {
+                      weekday: "short",
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    });
+
+                    return (
+                      <button
+                        key={dateStr}
+                        type="button"
+                        onClick={() => setSelectedDate(dateStr)}
+                        className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer group ${
+                          isSelected
+                            ? "bg-primary/10 border-primary text-primary font-medium shadow-sm ring-1 ring-primary/30"
+                            : "bg-card hover:bg-muted/50 border-border hover:border-muted-foreground/30 text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`p-2 rounded-lg transition-colors ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary"
+                            }`}
+                          >
+                            <CalendarIcon className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold leading-none mb-1">
+                              {formattedDate}
+                            </div>
+                            <div className="text-xs opacity-70 font-mono">
+                              {dateStr}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge
+                          variant={isSelected ? "default" : "outline"}
+                          className="text-[10px] px-2 py-0.5"
+                        >
+                          {count} {count === 1 ? "session" : "sessions"}
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right Panel */}
@@ -800,7 +781,7 @@ const ClassDetails = ({ classItem }) => {
           <Card>
             <CardHeader className="flex flex-col items-start justify-between gap-3 pb-4">
               <CardTitle className="text-base sm:text-lg">
-                Attendance for {selectedDate}
+                Attendance for {selectedDate || "N/A"}
               </CardTitle>
               <div className="flex flex-col w-full sm:w-auto gap-2">
                 {exportProgress && (
@@ -835,7 +816,7 @@ const ClassDetails = ({ classItem }) => {
                       onClick={exportCurrentDate}
                       disabled={sessions.length === 0}
                     >
-                      Current Date ({selectedDate})
+                      Current Date ({selectedDate || "N/A"})
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => setShowDateRangeDialog(true)}
@@ -883,6 +864,7 @@ const ClassDetails = ({ classItem }) => {
                           size="sm"
                           onClick={handleOpenDeleteSession}
                           className="h-10 text-xs sm:text-sm gap-1.5"
+                          disabled={deleteSessionMutation.isPending}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Delete Session
@@ -951,7 +933,7 @@ const ClassDetails = ({ classItem }) => {
                 </div>
               )}
 
-              {/* Table - Mobile Responsive with Horizontal Scroll */}
+              {/* Table - Mobile Responsive */}
               {filteredRows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 px-4 text-center border rounded-lg bg-muted/10 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60 mb-3 ring-6 ring-muted/10">
@@ -959,7 +941,7 @@ const ClassDetails = ({ classItem }) => {
                   </div>
                   <h3 className="text-sm font-semibold text-foreground">No students found</h3>
                   <p className="mt-1 text-xs text-muted-foreground max-w-xs">
-                    {rows.length === 0 
+                    {rows.length === 0
                       ? "There are no student records for this session."
                       : `We couldn't find any students matching "${searchQuery}".`}
                   </p>
@@ -1001,63 +983,60 @@ const ClassDetails = ({ classItem }) => {
 
                       <TableBody>
                         {filteredRows.map((r) => (
-                        <TableRow key={r.student_id ? `${r.student_id}-${r.roll_number}` : `${r.student_name}-${Math.random()}`}>
-                          <TableCell>{r.roll_number || "—"}</TableCell>
-                          <TableCell>{r.section || "—"}</TableCell>
-                          <TableCell>{r.student_name}</TableCell>
+                          <TableRow key={r.student_id ? `${r.student_id}-${r.roll_number}` : `${r.student_name}-${Math.random()}`}>
+                            <TableCell>{r.roll_number || "—"}</TableCell>
+                            <TableCell>{r.section || "—"}</TableCell>
+                            <TableCell>{r.student_name}</TableCell>
 
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild disabled={rowUpdating[r.student_id]}>
-                                <button className="cursor-pointer focus:outline-none transition-transform active:scale-95 disabled:opacity-50">
-                                  <Badge
-                                    variant={
-                                      r.status === "PRESENT" || r.status === "LATE"
-                                        ? "default"
-                                        : "destructive"
-                                    }
-                                    className="hover:opacity-85 transition-opacity px-2.5 py-1 text-xs select-none cursor-pointer flex items-center gap-1 font-semibold"
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild disabled={rowUpdating[r.student_id]}>
+                                  <button className="cursor-pointer focus:outline-none transition-transform active:scale-95 disabled:opacity-50">
+                                    <Badge
+                                      variant={
+                                        r.status === "PRESENT" || r.status === "LATE"
+                                          ? "default"
+                                          : "destructive"
+                                      }
+                                      className="hover:opacity-85 transition-opacity px-2.5 py-1 text-xs select-none cursor-pointer flex items-center gap-1 font-semibold"
+                                    >
+                                      {r.status === "LATE" ? "PRESENT" : r.status}
+                                      <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                                    </Badge>
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start" className="min-w-[100px] rounded-lg shadow-md border-border bg-popover">
+                                  <DropdownMenuItem
+                                    onClick={() => handleUpdateStatus(r.student_id, r.student_name, "PRESENT")}
+                                    className="text-xs sm:text-sm font-medium hover:bg-muted py-1.5 cursor-pointer text-green-600 focus:text-green-600 focus:bg-green-50 dark:focus:bg-green-950/20"
                                   >
-                                    {r.status === "LATE" ? "PRESENT" : r.status}
-                                    <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                                  </Badge>
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start" className="min-w-[100px] rounded-lg shadow-md border-border bg-popover">
-                                <DropdownMenuItem
-                                  onClick={() => handleUpdateStatus(r.student_id, r.student_name, "PRESENT")}
-                                  className="text-xs sm:text-sm font-medium hover:bg-muted py-1.5 cursor-pointer text-green-600 focus:text-green-600 focus:bg-green-50 dark:focus:bg-green-950/20"
-                                >
-                                  Present
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleUpdateStatus(r.student_id, r.student_name, "ABSENT")}
-                                  className="text-xs sm:text-sm font-medium hover:bg-muted py-1.5 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20"
-                                >
-                                  Absent
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
+                                    Present
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleUpdateStatus(r.student_id, r.student_name, "ABSENT")}
+                                    className="text-xs sm:text-sm font-medium hover:bg-muted py-1.5 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20"
+                                  >
+                                    Absent
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
 
-                          <TableCell>
-                            {r.marked_at
-                              ? new Date(r.marked_at + "Z").toLocaleTimeString(
-                                  "en-IN",
-                                  {
+                            <TableCell>
+                              {r.marked_at
+                                ? new Date(r.marked_at + "Z").toLocaleTimeString("en-IN", {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                     hour12: true,
-                                  }
-                                )
-                              : "—"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                                  })
+                                : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
-              </div>
               )}
             </CardContent>
           </Card>
@@ -1072,8 +1051,7 @@ const ClassDetails = ({ classItem }) => {
               Export Date Range
             </DialogTitle>
             <DialogDescription className="text-sm">
-              Select a date range to export all attendance sessions within that
-              period.
+              Select a date range to export all attendance sessions within that period.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 py-4">
@@ -1164,7 +1142,7 @@ const ClassDetails = ({ classItem }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Session Confirmation - Step 2 (Final Warning with typed confirmation) */}
+      {/* Delete Session Confirmation - Step 2 */}
       <Dialog
         open={deleteSessionStep === 2}
         onOpenChange={(open) => {
@@ -1201,7 +1179,7 @@ const ClassDetails = ({ classItem }) => {
               variant="outline"
               onClick={() => setDeleteSessionStep(0)}
               className="h-10 sm:h-11"
-              disabled={isDeletingSession}
+              disabled={deleteSessionMutation.isPending}
             >
               Cancel
             </Button>
@@ -1210,11 +1188,11 @@ const ClassDetails = ({ classItem }) => {
               onClick={handleConfirmDeleteStep2}
               className="h-10 sm:h-11"
               disabled={
-                isDeletingSession ||
+                deleteSessionMutation.isPending ||
                 deleteSessionInput.trim().toLowerCase() !== "delete"
               }
             >
-              {isDeletingSession ? (
+              {deleteSessionMutation.isPending ? (
                 <span className="flex items-center gap-2">
                   <Loader className="h-4 w-4 animate-spin" />
                   Deleting...

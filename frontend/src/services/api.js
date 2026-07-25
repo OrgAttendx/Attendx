@@ -112,6 +112,13 @@ export const facultyAPI = {
   },
 
 
+  async getSessionDates(class_id) {
+    const { data } = await api.get(
+      `/faculty/classes/${class_id}/session-dates`,
+    );
+    return data;
+  },
+
   /* ------------------ NEW — Sessions By Date ------------------ */
   async getSessionsByDate(class_id, date) {
     const { data } = await api.get(

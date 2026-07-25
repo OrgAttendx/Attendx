@@ -267,6 +267,37 @@ async def get_sessions_by_date_endpoint(class_id: int, date: str, current_user: 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/faculty/classes/{class_id}/session-dates")
+async def get_class_session_dates(class_id: int, current_user: dict = Depends(require_faculty)):
+    """
+    Get all distinct dates on which sessions were held for a specific class,
+    along with the count of sessions on that date and latest start_time.
+    Ordered descending by date.
+    """
+    try:
+        sql = text(
+            """
+            SELECT 
+                TO_CHAR(start_time, 'YYYY-MM-DD') as date,
+                COUNT(session_id) as session_count,
+                MAX(start_time) as latest_start_time
+            FROM attendance_sessions
+            WHERE class_id = :class_id
+            GROUP BY TO_CHAR(start_time, 'YYYY-MM-DD')
+            ORDER BY date DESC
+            """
+        )
+        async with engine.connect() as conn:
+            result = await conn.execute(sql, {"class_id": class_id})
+            return [dict(r._mapping) for r in result]
+    except Exception as e:
+        print(f"Error in session-dates: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @router.get("/api/faculty/classes/{class_id}/sessions/stats")
 async def get_class_sessions_stats(class_id: int, current_user: dict = Depends(require_faculty)):
     """Return total sessions and latest session start time for a class."""
