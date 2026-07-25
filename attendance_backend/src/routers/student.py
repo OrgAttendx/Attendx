@@ -7,13 +7,17 @@ from src.core.security import require_student
 from src import queries
 from typing import Optional
 from datetime import datetime, timedelta
+from src.core.logging_config import get_logger
 
+logger = get_logger("student")
 router = APIRouter(tags=["student"])
 
 @router.get("/api/student/classes")
 async def get_enrolled_classes(student_id: int, current_user: dict = Depends(require_student)):
+    logger.info(f"📚 [STUDENT/CLASSES] Fetching enrolled classes for student_id={student_id}")
     # Ownership check: a student can only view their own classes
     if current_user["user_id"] != student_id:
+        logger.warning(f"⚠️ [STUDENT/CLASSES] Access denied: User {current_user['user_id']} tried to access classes for student {student_id}")
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         sql = text(
@@ -33,15 +37,20 @@ async def get_enrolled_classes(student_id: int, current_user: dict = Depends(req
         )
         async with engine.connect() as conn:
             result = await conn.execute(sql, {"student_id": student_id})
-            return [dict(r._mapping) for r in result]
+            rows = [dict(r._mapping) for r in result]
+            logger.info(f"✅ [STUDENT/CLASSES] Found {len(rows)} classes for student_id={student_id}")
+            return rows
     except Exception as e:
+        logger.exception(f"❌ [STUDENT/CLASSES] Error fetching classes for student_id={student_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/api/student/classes/join")
 async def join_class(join_data: JoinClassRequest, current_user: dict = Depends(require_student)):
+    logger.info(f"➕ [STUDENT/JOIN_CLASS] Student ID={join_data.student_id} attempting to join class with code: '{join_data.join_code}'")
     # Ownership check: a student can only join classes for themselves
     if current_user["user_id"] != join_data.student_id:
+        logger.warning(f"⚠️ [STUDENT/JOIN_CLASS] Access denied for user_id={current_user['user_id']}")
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         section_value = (join_data.section or "").strip() or None
@@ -53,6 +62,7 @@ async def join_class(join_data: JoinClassRequest, current_user: dict = Depends(r
             class_row = (await conn.execute(find_sql, {"join_code": join_data.join_code})).fetchone()
             
             if not class_row:
+                logger.warning(f"⚠️ [STUDENT/JOIN_CLASS] Invalid join code '{join_data.join_code}' by student_id={join_data.student_id}")
                 raise HTTPException(status_code=404, detail="Invalid join code")
             class_id = class_row[0]
             
@@ -60,6 +70,7 @@ async def join_class(join_data: JoinClassRequest, current_user: dict = Depends(r
             existing = (await conn.execute(check_enroll, {"student_id": join_data.student_id, "class_id": class_id})).fetchone()
             
             if existing:
+                logger.info(f"ℹ️ [STUDENT/JOIN_CLASS] Student ID={join_data.student_id} already enrolled in class_id={class_id}")
                 return {"message": "Already enrolled", "class_id": class_id}
             
             enroll_sql = text(
@@ -75,16 +86,18 @@ async def join_class(join_data: JoinClassRequest, current_user: dict = Depends(r
                 "section": section_value
             })
             
+            logger.info(f"✅ [STUDENT/JOIN_CLASS] Student ID={join_data.student_id} successfully joined class_id={class_id}")
             return {"message": "Successfully joined class", "class_id": class_id}
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception(f"❌ [STUDENT/JOIN_CLASS] Error joining class for student_id={join_data.student_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def _submit_code_internal(payload: SubmitAttendanceCode):
-    """Internal helper for attendance submission. Used by both the HTTP route and the SQS Lambda handler.
-    Does NOT perform auth or cooldown checks — those are handled at the route level."""
+    """Internal helper for attendance submission. Used by both the HTTP route and the SQS Lambda handler."""
+    logger.info(f"⏱️ [ATTENDANCE/SUBMIT_INTERNAL] Processing code submit for student_id={payload.student_id}, code='{payload.code}'")
     sql_session = text(
         """
         SELECT session_id, class_id, latitude, longitude, radius_meters
@@ -96,17 +109,19 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
     async with engine.begin() as conn:
         session = (await conn.execute(sql_session, {"code": payload.code})).fetchone()
         if not session:
+            logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Invalid/expired code '{payload.code}' for student_id={payload.student_id}")
             raise HTTPException(status_code=400, detail="Invalid or expired code")
         
         session_id = session.session_id
         class_id = session.class_id
         session_lat = session.latitude
         session_lon = session.longitude
-        radius_meters = session.radius_meters or 100  # Tightened default from 500m to 100m
+        radius_meters = session.radius_meters or 100
         
         # Check enrollment
         sql_enroll = text("SELECT 1 FROM class_enrollments WHERE student_id = :sid AND class_id = :cid")
         if not (await conn.execute(sql_enroll, {"sid": payload.student_id, "cid": class_id})).fetchone():
+            logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Student ID={payload.student_id} not enrolled in class_id={class_id}")
             raise HTTPException(status_code=403, detail="Student not enrolled in this class")
         
         status = "PRESENT"
@@ -120,16 +135,18 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
                     payload.latitude, payload.longitude
                 )
                 student_accuracy = payload.accuracy or 0
-                # Tightened accuracy buffer: cap at 50m (was 100m)
                 accuracy_buffer = min(student_accuracy, 50)
                 effective_radius = radius_meters + accuracy_buffer
                 
                 if distance > effective_radius:
                     status = "ABSENT"
                     location_message = f" - Outside zone (Distance: {distance:.0f}m, Allowed: {effective_radius:.0f}m)"
+                    logger.warning(f"📍 [ATTENDANCE/LOCATION] Student ID={payload.student_id} outside geofence zone: {distance:.1f}m > {effective_radius:.1f}m")
                 else:
                     location_message = f" - Within zone ({distance:.0f}m)"
+                    logger.info(f"📍 [ATTENDANCE/LOCATION] Student ID={payload.student_id} within geofence zone: {distance:.1f}m <= {effective_radius:.1f}m")
             else:
+                logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Geofence active but student_id={payload.student_id} provided no coordinates")
                 raise HTTPException(status_code=400, detail="Location is required for this session.")
         
         # Upsert
@@ -152,8 +169,8 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
         
         class_sql = text("SELECT class_name, faculty_id FROM classes WHERE class_id = :cid")
         c_row = (await conn.execute(class_sql, {"cid": class_id})).fetchone()
-        class_name = c_row.class_name
 
+        logger.info(f"✅ [ATTENDANCE/SUBMIT_INTERNAL] Attendance recorded: student_id={payload.student_id}, session_id={session_id}, status={status}")
         return {
             "message": f"Attendance marked as {status}{location_message}",
             "session_id": session_id,
@@ -165,8 +182,10 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
 
 @router.post("/attendance/submit-code")
 async def submit_code(payload: SubmitAttendanceCode, current_user: dict = Depends(require_student)):
+    logger.info(f"📲 [ATTENDANCE/SUBMIT_CODE] HTTP submit attendance code by student_id={payload.student_id}")
     # Ownership check: a student can only submit attendance for themselves
     if current_user["user_id"] != payload.student_id:
+        logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_CODE] Access denied for user_id={current_user['user_id']}")
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         # ── Anti-spoofing: duplicate submission cooldown (60 seconds) ──
@@ -186,9 +205,11 @@ async def submit_code(payload: SubmitAttendanceCode, current_user: dict = Depend
             if last_record and last_record.marked_at:
                 time_since = datetime.utcnow() - last_record.marked_at
                 if time_since < timedelta(seconds=60):
+                    wait_secs = 60 - int(time_since.total_seconds())
+                    logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_CODE] Cooldown active for student_id={payload.student_id} ({wait_secs}s remaining)")
                     raise HTTPException(
                         status_code=429,
-                        detail=f"Please wait {60 - int(time_since.total_seconds())} seconds before resubmitting."
+                        detail=f"Please wait {wait_secs} seconds before resubmitting."
                     )
 
         return await _submit_code_internal(payload)
@@ -196,15 +217,15 @@ async def submit_code(payload: SubmitAttendanceCode, current_user: dict = Depend
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[SUBMIT_CODE_ERROR] {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"❌ [ATTENDANCE/SUBMIT_CODE] Error processing attendance submission for student_id={payload.student_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/student/classes/{class_id}")
 async def get_student_class_details(class_id: int, student_id: int, current_user: dict = Depends(require_student)):
+    logger.info(f"🔍 [STUDENT/CLASS_DETAILS] Fetch details for class_id={class_id}, student_id={student_id}")
     # Ownership check
     if current_user["user_id"] != student_id:
+        logger.warning(f"⚠️ [STUDENT/CLASS_DETAILS] Access denied for user_id={current_user['user_id']}")
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         sql = text(
@@ -233,25 +254,40 @@ async def get_student_class_details(class_id: int, student_id: int, current_user
         async with engine.connect() as conn:
             row = (await conn.execute(sql, {"class_id": class_id, "student_id": student_id})).fetchone()
             if not row:
+                logger.warning(f"⚠️ [STUDENT/CLASS_DETAILS] Class not found: class_id={class_id}")
                 raise HTTPException(status_code=404, detail="Class not found")
             return dict(row._mapping)
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception(f"❌ [STUDENT/CLASS_DETAILS] Error fetching class details class_id={class_id}, student_id={student_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/student/{student_id}/attendance-percentage")
 async def attendance_percentage_student(student_id: int, current_user: dict = Depends(require_student)):
+    logger.info(f"📊 [STUDENT/ATTENDANCE_PCT] Fetch attendance percentage for student_id={student_id}")
     # Ownership check
     if current_user["user_id"] != student_id:
+        logger.warning(f"⚠️ [STUDENT/ATTENDANCE_PCT] Access denied for user_id={current_user['user_id']}")
         raise HTTPException(status_code=403, detail="Access denied")
-    result = await queries.get_attendance_percentage_for_student(student_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Student or records not found")
-    return result
+    try:
+        result = await queries.get_attendance_percentage_for_student(student_id)
+        if result is None:
+            logger.warning(f"⚠️ [STUDENT/ATTENDANCE_PCT] No records found for student_id={student_id}")
+            raise HTTPException(status_code=404, detail="Student or records not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"❌ [STUDENT/ATTENDANCE_PCT] Error for student_id={student_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/student/classes/{class_id}/attendance")
 async def get_student_attendance_history(class_id: int, student_id: int, current_user: dict = Depends(require_student)):
+    logger.info(f"📜 [STUDENT/ATTENDANCE_HISTORY] Fetch attendance history for class_id={class_id}, student_id={student_id}")
     # Ownership check
     if current_user["user_id"] != student_id:
+        logger.warning(f"⚠️ [STUDENT/ATTENDANCE_HISTORY] Access denied for user_id={current_user['user_id']}")
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         sql = text(
@@ -270,6 +306,11 @@ async def get_student_attendance_history(class_id: int, student_id: int, current
         )
         async with engine.connect() as conn:
             result = await conn.execute(sql, {"class_id": class_id, "student_id": student_id})
-            return [dict(r._mapping) for r in result]
+            rows = [dict(r._mapping) for r in result]
+            logger.info(f"✅ [STUDENT/ATTENDANCE_HISTORY] Retrieved {len(rows)} history records for student_id={student_id}, class_id={class_id}")
+            return rows
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"❌ [STUDENT/ATTENDANCE_HISTORY] Error fetching history class_id={class_id}, student_id={student_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
