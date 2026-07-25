@@ -6,12 +6,15 @@ from src.core.security import verify_password, get_password_hash, create_access_
 from src.core.email import send_password_reset_email
 from src.core.config import FACULTY_REGISTER_KEY
 from src.models.schemas import LoginRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest, DeleteAccountRequest
+from src.core.logging_config import get_logger
 
+logger = get_logger("auth")
 router = APIRouter(tags=["auth"])
 
 @router.post("/login")
 async def login(request: LoginRequest):
     """Login with email and password, returns JWT token"""
+    logger.info(f"🔑 [AUTH/LOGIN] Attempting login for email: {request.email}")
     try:
         # Truncate password to 72 bytes (bcrypt limit) to avoid errors
         password = request.password
@@ -26,6 +29,7 @@ async def login(request: LoginRequest):
             row = result.fetchone()
             
             if not row:
+                logger.warning(f"⚠️ [AUTH/LOGIN] Failed login: User not found ({request.email})")
                 raise HTTPException(status_code=401, detail="Invalid email or password")
             
             user = dict(row._mapping)
@@ -40,6 +44,7 @@ async def login(request: LoginRequest):
                 password_valid = (password == user["password_hash"])
             
             if not password_valid:
+                logger.warning(f"⚠️ [AUTH/LOGIN] Failed login: Incorrect password ({request.email})")
                 raise HTTPException(status_code=401, detail="Invalid email or password")
             
             # Create JWT token
@@ -47,6 +52,7 @@ async def login(request: LoginRequest):
                 data={"sub": user["user_id"], "role": user["role"], "email": user["email"]}
             )
             
+            logger.info(f"✅ [AUTH/LOGIN] Login successful for user_id={user['user_id']} ({user['email']}, role={user['role']})")
             return {
                 "message": "Login successful",
                 "access_token": access_token,
@@ -59,24 +65,24 @@ async def login(request: LoginRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[LOGIN] ERROR: {str(e)}")
+        logger.exception(f"❌ [AUTH/LOGIN] Unexpected error during login for {request.email}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/register")
 async def register(request: RegisterRequest):
     """Register a new user (student or faculty). Requires a valid registration key."""
+    logger.info(f"📝 [AUTH/REGISTER] Attempting registration for email: {request.email}, role: {request.role}")
     try:
-        print(f"[REGISTER] Attempting to register: {request.email}, role={request.role}")
-        
         # Validate role
         if request.role not in ["STUDENT", "FACULTY"]:
+            logger.warning(f"⚠️ [AUTH/REGISTER] Invalid role requested: {request.role}")
             raise HTTPException(status_code=400, detail="Role must be STUDENT or FACULTY")
         
         # Validate registration key (faculty only — students register freely)
         if request.role == "FACULTY":
             if not request.register_key or request.register_key != FACULTY_REGISTER_KEY:
-                print(f"[REGISTER] Invalid registration key for FACULTY")
+                logger.warning(f"⚠️ [AUTH/REGISTER] Invalid faculty registration key for email: {request.email}")
                 raise HTTPException(status_code=403, detail="Invalid registration key. Contact your administrator to get the correct key.")
         
         # Validate password length
@@ -93,7 +99,7 @@ async def register(request: RegisterRequest):
             check_sql = text("SELECT user_id FROM users WHERE email = :email")
             existing = await conn.execute(check_sql, {"email": request.email})
             if existing.fetchone():
-                print(f"[REGISTER] Email already exists: {request.email}")
+                logger.warning(f"⚠️ [AUTH/REGISTER] Email already exists: {request.email}")
                 raise HTTPException(status_code=400, detail="Email already registered")
             
             # Hash the password
@@ -118,7 +124,7 @@ async def register(request: RegisterRequest):
             )
             
             user = dict(result.fetchone()._mapping)
-            print(f"[REGISTER] Successfully registered user_id={user['user_id']}")
+            logger.info(f"✅ [AUTH/REGISTER] User registered successfully: user_id={user['user_id']}, role={user['role']}")
             
             return {
                 "message": "Registration successful",
@@ -131,13 +137,14 @@ async def register(request: RegisterRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[REGISTER] ERROR: {str(e)}")
+        logger.exception(f"❌ [AUTH/REGISTER] Error during registration for {request.email}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):
     """Send password reset email"""
+    logger.info(f"📧 [AUTH/FORGOT_PASSWORD] Forgot password requested for: {request.email}")
     try:
         async with engine.begin() as conn:
             # Check if user exists
@@ -146,7 +153,7 @@ async def forgot_password(request: ForgotPasswordRequest):
             user_row = result.fetchone()
             
             if not user_row:
-                # Don't reveal if email exists or not (security best practice)
+                logger.info(f"ℹ️ [AUTH/FORGOT_PASSWORD] Email not found (silent return): {request.email}")
                 return {
                     "message": "If the email exists, a reset link has been sent",
                     "success": True
@@ -182,29 +189,29 @@ async def forgot_password(request: ForgotPasswordRequest):
         )
         
         if not email_sent:
-            print(f"⚠️  Failed to send reset email to {user['email']}")
+            logger.error(f"❌ [AUTH/FORGOT_PASSWORD] Failed to send reset email to {user['email']}")
             raise HTTPException(
                 status_code=500,
                 detail="Failed to send reset email. Please check SMTP configuration on the server."
             )
         
+        logger.info(f"✅ [AUTH/FORGOT_PASSWORD] Password reset email sent to user_id={user['user_id']}")
         return {
             "message": "If the email exists, a reset link has been sent",
             "success": True
         }
     
     except HTTPException:
-        raise  # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        import traceback
-        print(f"[FORGOT_PASSWORD] ERROR: {str(e)}")
-        print(f"[FORGOT_PASSWORD] TRACEBACK: {traceback.format_exc()}")
+        logger.exception(f"❌ [AUTH/FORGOT_PASSWORD] Error processing forgot password for {request.email}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
 
 
 @router.post("/reset-password")
 async def reset_password(request: ResetPasswordRequest):
     """Reset password using token"""
+    logger.info("🔒 [AUTH/RESET_PASSWORD] Reset password attempt with token")
     try:
         if len(request.new_password) < 6:
             raise HTTPException(
@@ -224,6 +231,7 @@ async def reset_password(request: ResetPasswordRequest):
             token_row = result.fetchone()
             
             if not token_row:
+                logger.warning("⚠️ [AUTH/RESET_PASSWORD] Invalid or non-existent reset token")
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid or expired reset token"
@@ -233,6 +241,7 @@ async def reset_password(request: ResetPasswordRequest):
             
             # Check if token is used
             if token_data["used"]:
+                logger.warning(f"⚠️ [AUTH/RESET_PASSWORD] Token already used for user_id={token_data['user_id']}")
                 raise HTTPException(
                     status_code=400,
                     detail="This reset link has already been used"
@@ -240,6 +249,7 @@ async def reset_password(request: ResetPasswordRequest):
             
             # Check if token is expired
             if datetime.utcnow() > token_data["expires_at"]:
+                logger.warning(f"⚠️ [AUTH/RESET_PASSWORD] Token expired for user_id={token_data['user_id']}")
                 raise HTTPException(
                     status_code=400,
                     detail="This reset link has expired"
@@ -267,7 +277,7 @@ async def reset_password(request: ResetPasswordRequest):
             """)
             await conn.execute(mark_used_sql, {"token": request.token})
             
-            print(f"✅ Password reset successful for user_id={token_data['user_id']}")
+            logger.info(f"✅ [AUTH/RESET_PASSWORD] Password reset successful for user_id={token_data['user_id']}")
         
         return {
             "message": "Password reset successful",
@@ -277,13 +287,14 @@ async def reset_password(request: ResetPasswordRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[RESET_PASSWORD] ERROR: {str(e)}")
+        logger.exception(f"❌ [AUTH/RESET_PASSWORD] Unexpected error resetting password: {e}")
         raise HTTPException(status_code=500, detail="Failed to reset password")
 
 
 @router.delete("/delete-account")
 async def delete_account(request: DeleteAccountRequest):
     """Delete a user account and all associated data after password verification"""
+    logger.info(f"🗑️ [AUTH/DELETE_ACCOUNT] Request to delete account for user_id={request.user_id}")
     try:
         async with engine.begin() as conn:
             # 1. Fetch user to verify password
@@ -294,6 +305,7 @@ async def delete_account(request: DeleteAccountRequest):
             row = result.fetchone()
 
             if not row:
+                logger.warning(f"⚠️ [AUTH/DELETE_ACCOUNT] User not found: user_id={request.user_id}")
                 raise HTTPException(status_code=404, detail="User not found")
 
             user = dict(row._mapping)
@@ -306,6 +318,7 @@ async def delete_account(request: DeleteAccountRequest):
                 password_valid = (request.password == user["password_hash"])
 
             if not password_valid:
+                logger.warning(f"⚠️ [AUTH/DELETE_ACCOUNT] Incorrect password for account deletion: user_id={request.user_id}")
                 raise HTTPException(status_code=401, detail="Incorrect password")
 
             # 3. Delete all related data (cascade)
@@ -319,8 +332,6 @@ async def delete_account(request: DeleteAccountRequest):
             )
 
             if role == "FACULTY":
-                # For faculty: delete attendance records for their sessions, then sessions, then classes
-                # Get all class IDs owned by this faculty
                 class_ids_result = await conn.execute(
                     text("SELECT class_id FROM classes WHERE faculty_id = :user_id"),
                     {"user_id": user_id}
@@ -328,7 +339,6 @@ async def delete_account(request: DeleteAccountRequest):
                 class_ids = [r[0] for r in class_ids_result.fetchall()]
 
                 if class_ids:
-                    # Delete attendance records for sessions in these classes
                     await conn.execute(
                         text("""
                             DELETE FROM attendance_records 
@@ -340,26 +350,22 @@ async def delete_account(request: DeleteAccountRequest):
                         {"class_ids": class_ids}
                     )
 
-                    # Delete attendance sessions for these classes
                     await conn.execute(
                         text("DELETE FROM attendance_sessions WHERE class_id = ANY(:class_ids)"),
                         {"class_ids": class_ids}
                     )
 
-                    # Delete class enrollments for these classes
                     await conn.execute(
                         text("DELETE FROM class_enrollments WHERE class_id = ANY(:class_ids)"),
                         {"class_ids": class_ids}
                     )
 
-                    # Delete the classes themselves
                     await conn.execute(
                         text("DELETE FROM classes WHERE faculty_id = :user_id"),
                         {"user_id": user_id}
                     )
 
             elif role == "STUDENT":
-                # For students: delete their attendance records and class enrollments
                 await conn.execute(
                     text("DELETE FROM attendance_records WHERE student_id = :user_id"),
                     {"user_id": user_id}
@@ -375,7 +381,7 @@ async def delete_account(request: DeleteAccountRequest):
                 {"user_id": user_id}
             )
 
-            print(f"✅ Account deleted successfully for user_id={user_id} ({user['email']})")
+            logger.info(f"✅ [AUTH/DELETE_ACCOUNT] Account deleted successfully: user_id={user_id} ({user['email']})")
 
             return {
                 "message": "Account deleted successfully",
@@ -385,6 +391,7 @@ async def delete_account(request: DeleteAccountRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[DELETE_ACCOUNT] ERROR: {str(e)}")
+        logger.exception(f"❌ [AUTH/DELETE_ACCOUNT] Error deleting account user_id={request.user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+
 
