@@ -129,7 +129,7 @@ export default function LocationCapture({
         {status === "idle" && (
           <p>
             Your coordinates are only used for this session to verify you are
-            within the classroom radius.
+            within the classroom zone.
           </p>
         )}
 

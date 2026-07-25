@@ -292,7 +292,7 @@ const FacultyDashboard = () => {
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [classToStart, setClassToStart] = useState(null);
   const [sessionLocation, setSessionLocation] = useState(null);
-  const [radiusMeters, setRadiusMeters] = useState(500);
+  const [diameterMeters, setDiameterMeters] = useState(500);
 
   // Helper: enrich a class with dynamic stats (students count, sessions count, last session time)
   const enrichClassWithStats = async (cls) => {
@@ -430,13 +430,16 @@ const FacultyDashboard = () => {
       );
 
       let locationData = null;
+      const currentDiameter = Number(diameterMeters) || 200;
+      const calculatedRadius = Math.max(5, Math.round(currentDiameter / 2));
+
       if (useLocation && sessionLocation) {
         locationData = {
           latitude: sessionLocation.latitude,
           longitude: sessionLocation.longitude,
-          radius_meters: radiusMeters,
+          radius_meters: calculatedRadius,
         };
-        console.log("[FacultyDashboard] Using location:", locationData);
+        console.log("[FacultyDashboard] Using location with diameter", currentDiameter, "m (radius:", calculatedRadius, "m):", locationData);
       }
 
       const session = await facultyAPI.startSession(
@@ -465,7 +468,7 @@ const FacultyDashboard = () => {
       toast({
         title: "Session Started",
         description: useLocation
-          ? `${classToStart.class_name} session started with location-based attendance (${radiusMeters}m radius).`
+          ? `${classToStart.class_name} session started with location verification (${currentDiameter}m diameter / ${calculatedRadius}m radius).`
           : `${classToStart.class_name} session is active.`,
       });
     } catch (error) {
@@ -1204,50 +1207,61 @@ const FacultyDashboard = () => {
                 </div>
 
                 {sessionLocation && (
-                  <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-3">
-                    <Label htmlFor="radius">Allowed Radius (meters)</Label>
+                  <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="diameter" className="font-semibold text-foreground">
+                        Allowed Classroom Zone (Diameter)
+                      </Label>
+                      <span className="text-xs font-semibold text-blue-600 bg-blue-50 dark:bg-blue-950/50 dark:text-blue-400 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+                        Radius: {Math.round((Number(diameterMeters) || 0) / 2)}m
+                      </span>
+                    </div>
+
                     <div className="flex flex-wrap gap-2">
-                      {[500, 1000, 1500, 2000, 2500].map((r) => (
+                      {[100, 200, 500, 1000].map((d) => (
                         <Button
-                          key={r}
+                          key={d}
                           type="button"
                           size="sm"
-                          variant={radiusMeters === r ? "default" : "outline"}
-                          onClick={() => setRadiusMeters(r)}
-                          className="min-w-[50px]"
+                          variant={Number(diameterMeters) === d ? "default" : "outline"}
+                          onClick={() => setDiameterMeters(d)}
+                          className="min-w-[65px] font-medium"
                         >
-                          {r}m
+                          {d}m
                         </Button>
                       ))}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        Custom:
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-xs text-muted-foreground font-medium">
+                        Custom Diameter (Keypad):
                       </span>
                       <Input
-                        id="radius"
+                        id="diameter"
                         type="number"
-                        min="500"
+                        min="10"
                         max="10000"
-                        step="500"
-                        value={radiusMeters}
+                        step="10"
+                        value={diameterMeters}
                         onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          if (!isNaN(val)) {
-                            const roundedVal = Math.round(val / 500) * 500;
-                            if (roundedVal >= 500 && roundedVal <= 10000) {
-                              setRadiusMeters(roundedVal);
-                            }
+                          const val = e.target.value;
+                          setDiameterMeters(val === "" ? "" : Math.max(1, parseInt(val, 10) || 0));
+                        }}
+                        onBlur={() => {
+                          if (!diameterMeters || Number(diameterMeters) < 10) {
+                            setDiameterMeters(200);
                           }
                         }}
-                        className="w-24"
+                        className="w-28 text-sm font-semibold"
+                        placeholder="e.g. 200"
                       />
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs font-medium text-muted-foreground">
                         meters
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Students must be within {radiusMeters}m of your location.
+
+                    <p className="text-xs text-muted-foreground pt-1">
+                      Students must be within the <strong>{diameterMeters || 0}m diameter zone</strong> (up to {Math.round((Number(diameterMeters) || 0) / 2)}m from your center location).
                       GPS accuracy (±
                       {sessionLocation.accuracy
                         ? Math.round(sessionLocation.accuracy)
