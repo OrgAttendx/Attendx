@@ -22,12 +22,25 @@ async def get_enrolled_classes(student_id: int, current_user: dict = Depends(req
     try:
         sql = text(
             """
-                 SELECT c.class_id,
-                     c.class_name,
-                     c.join_code,
-                     u.name as faculty_name,
-                     ce.roll_number,
-                     ce.section
+            SELECT c.class_id,
+                   c.class_name,
+                   c.join_code,
+                   u.name as faculty_name,
+                   ce.roll_number,
+                   ce.section,
+                   COALESCE(
+                       (
+                           SELECT ROUND(
+                               (COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END) * 100.0) / NULLIF(COUNT(s.session_id), 0)::numeric,
+                               1
+                           )::float
+                           FROM attendance_sessions s
+                           LEFT JOIN attendance_records ar 
+                               ON ar.session_id = s.session_id AND ar.student_id = ce.student_id
+                           WHERE s.class_id = c.class_id
+                       ),
+                       0.0
+                   )::float as attendance_rate
             FROM class_enrollments ce
             JOIN classes c ON ce.class_id = c.class_id
             JOIN users u ON c.faculty_id = u.user_id
@@ -313,4 +326,87 @@ async def get_student_attendance_history(class_id: int, student_id: int, current
         raise
     except Exception as e:
         logger.exception(f"❌ [STUDENT/ATTENDANCE_HISTORY] Error fetching history class_id={class_id}, student_id={student_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/student/classes/{class_id}/details")
+async def update_student_class_details(
+    class_id: int,
+    payload: UpdateStudentClassDetailsRequest,
+    current_user: dict = Depends(require_student)
+):
+    logger.info(f"✏️ [STUDENT/UPDATE_DETAILS] student_id={payload.student_id}, class_id={class_id}")
+    if current_user["user_id"] != payload.student_id:
+        logger.warning(f"⚠️ [STUDENT/UPDATE_DETAILS] Access denied for user_id={current_user['user_id']}")
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    roll_number = (payload.roll_number or "").strip()
+    if not roll_number:
+        raise HTTPException(status_code=400, detail="Roll number is required")
+
+    section_value = (payload.section or "").strip() or None
+    if section_value:
+        section_value = section_value[:50]
+
+    try:
+        async with engine.begin() as conn:
+            sql = text(
+                """
+                UPDATE class_enrollments
+                SET roll_number = :roll_number, section = :section
+                WHERE class_id = :class_id AND student_id = :student_id
+                """
+            )
+            result = await conn.execute(sql, {
+                "roll_number": roll_number,
+                "section": section_value,
+                "class_id": class_id,
+                "student_id": payload.student_id
+            })
+            if result.rowcount == 0:
+                logger.warning(f"⚠️ [STUDENT/UPDATE_DETAILS] Enrollment not found for class_id={class_id}, student_id={payload.student_id}")
+                raise HTTPException(status_code=404, detail="Enrollment not found")
+
+            logger.info(f"✅ [STUDENT/UPDATE_DETAILS] Updated details for student_id={payload.student_id}, class_id={class_id}")
+            return {"message": "Details updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"❌ [STUDENT/UPDATE_DETAILS] Error updating details for class_id={class_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/student/classes/{class_id}")
+async def leave_class(
+    class_id: int,
+    student_id: int,
+    current_user: dict = Depends(require_student)
+):
+    logger.info(f"🚪 [STUDENT/LEAVE_CLASS] student_id={student_id}, class_id={class_id}")
+    if current_user["user_id"] != student_id:
+        logger.warning(f"⚠️ [STUDENT/LEAVE_CLASS] Access denied for user_id={current_user['user_id']}")
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        async with engine.begin() as conn:
+            sql = text(
+                """
+                DELETE FROM class_enrollments
+                WHERE class_id = :class_id AND student_id = :student_id
+                """
+            )
+            result = await conn.execute(sql, {
+                "class_id": class_id,
+                "student_id": student_id
+            })
+            if result.rowcount == 0:
+                logger.warning(f"⚠️ [STUDENT/LEAVE_CLASS] Enrollment not found for class_id={class_id}, student_id={student_id}")
+                raise HTTPException(status_code=404, detail="Enrollment not found")
+
+            logger.info(f"✅ [STUDENT/LEAVE_CLASS] student_id={student_id} left class_id={class_id}")
+            return {"message": "Successfully left class"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"❌ [STUDENT/LEAVE_CLASS] Error leaving class_id={class_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
