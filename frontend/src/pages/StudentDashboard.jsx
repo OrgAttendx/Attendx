@@ -9,6 +9,10 @@ import {
   BookOpen,
   Calendar,
   Sparkles,
+  MoreVertical,
+  Pencil,
+  LogOut,
+  AlertTriangle,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/enhanced-button";
@@ -29,7 +33,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+
 import { useToast } from "@/hooks/use-toast";
 import { studentAPI } from "@/services/api";
 import { attendanceApi } from "@/api/attendance";
@@ -203,6 +214,20 @@ const StudentDashboard = () => {
   const [attendanceRecords, setAttendanceRecords] = useState({});
   const [recordsLoading, setRecordsLoading] = useState(false);
 
+  // Edit class details state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState(null);
+  const [editRollNumber, setEditRollNumber] = useState("");
+  const [editSection, setEditSection] = useState("");
+  const [isUpdatingDetails, setIsUpdatingDetails] = useState(false);
+
+  // Leave class state (2-step confirmation)
+  const [leaveConfirmStep, setLeaveConfirmStep] = useState(0); // 0: closed, 1: step 1, 2: step 2
+  const [leavingClass, setLeavingClass] = useState(null);
+  const [leaveConfirmInput, setLeaveConfirmInput] = useState("");
+  const [isLeavingClass, setIsLeavingClass] = useState(false);
+
+
   useEffect(() => {
     fetchEnrolledClasses();
   }, []);
@@ -223,6 +248,7 @@ const StudentDashboard = () => {
               attendanceRate: details.attendance_rate || 0,
               mode: "CODE",
               joinCode: cls.join_code,
+              rollNumber: cls.roll_number || "",
               section: cls.section || "",
             };
           } catch {
@@ -233,6 +259,7 @@ const StudentDashboard = () => {
               attendanceRate: 0,
               mode: "CODE",
               joinCode: cls.join_code,
+              rollNumber: cls.roll_number || "",
               section: cls.section || "",
             };
           }
@@ -250,6 +277,91 @@ const StudentDashboard = () => {
       setLoading(false);
     }
   };
+
+  const handleOpenEditDetails = (classItem) => {
+    setEditingClass(classItem);
+    setEditRollNumber(classItem.rollNumber || "");
+    setEditSection(classItem.section || "");
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEditDetails = async () => {
+    if (!editRollNumber.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a roll number.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsUpdatingDetails(true);
+      await studentAPI.updateClassDetails(editingClass.id, editRollNumber, editSection);
+      toast({
+        title: "Details Updated ✅",
+        description: "Your class details have been updated successfully.",
+      });
+      setEditDialogOpen(false);
+      setEditingClass(null);
+      fetchEnrolledClasses();
+    } catch (error) {
+      toast({
+        title: "Error Updating",
+        description: error.response?.data?.detail || error.message || "Failed to update details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingDetails(false);
+    }
+  };
+
+  const handleOpenLeaveClass = (classItem) => {
+    setLeavingClass(classItem);
+    setLeaveConfirmInput("");
+    setLeaveConfirmStep(1);
+  };
+
+  const handleConfirmLeaveStep1 = () => {
+    setLeaveConfirmInput("");
+    setLeaveConfirmStep(2);
+  };
+
+  const handleConfirmLeaveStep2 = async () => {
+    if (!leavingClass) return;
+
+    if (leaveConfirmInput.trim().toLowerCase() !== "leave") {
+      toast({
+        title: "Validation Error",
+        description: 'Please type "leave" to confirm.',
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsLeavingClass(true);
+      await studentAPI.leaveClass(leavingClass.id);
+      toast({
+        title: "Class Left",
+        description: `You have left ${leavingClass.name}.`,
+      });
+      setLeaveConfirmStep(0);
+      setLeavingClass(null);
+      setLeaveConfirmInput("");
+      fetchEnrolledClasses();
+    } catch (error) {
+      toast({
+        title: "Error Leaving Class",
+        description: error.response?.data?.detail || error.message || "Failed to leave class.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLeavingClass(false);
+    }
+  };
+
+
 
   const handleJoinClass = async () => {
     if (!joinCode.trim()) {
@@ -657,28 +769,63 @@ const StudentDashboard = () => {
                           {c.facultyName}
                         </CardDescription>
                       </div>
-                      <Badge
-                        variant={
-                          c.attendanceRate >= 75
-                            ? "default"
-                            : c.attendanceRate >= 50
-                              ? "secondary"
-                              : "destructive"
-                        }
-                        className={`text-xs font-semibold ${
-                          c.attendanceRate >= 75 ? "bg-green-600" : ""
-                        }`}
-                      >
-                        {c.attendanceRate.toFixed(1)}%
-                      </Badge>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge
+                          variant={
+                            c.attendanceRate >= 75
+                              ? "default"
+                              : c.attendanceRate >= 50
+                                ? "secondary"
+                                : "destructive"
+                          }
+                          className={`text-xs font-semibold ${
+                            c.attendanceRate >= 75 ? "bg-green-600" : ""
+                          }`}
+                        >
+                          {c.attendanceRate.toFixed(1)}%
+                        </Badge>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-full p-0 hover:bg-muted"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                              <span className="sr-only">Class options</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onClick={() => handleOpenEditDetails(c)}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleOpenLeaveClass(c)}
+                              className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                            >
+                              <LogOut className="h-4 w-4 mr-2" />
+                              Leave Class
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
-                    {c.section && (
-                      <div className="mt-2">
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {c.rollNumber && (
+                        <Badge variant="outline" className="text-xs">
+                          Roll: {c.rollNumber}
+                        </Badge>
+                      )}
+                      {c.section && (
                         <Badge variant="outline" className="text-xs">
                           Section: {c.section}
                         </Badge>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </CardHeader>
 
                   <CardContent className="relative space-y-3 pt-0">
@@ -985,6 +1132,178 @@ const StudentDashboard = () => {
                   "Submit with Location ✓"
                 ) : (
                   "Submit Code"
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Class Details Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg sm:text-xl">
+                Edit Class Details
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                Update your roll number and section for {editingClass?.name}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Roll Number</Label>
+                <Input
+                  value={editRollNumber}
+                  onChange={(e) => setEditRollNumber(e.target.value)}
+                  placeholder="Enter your roll number"
+                  className="h-11"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Section (Optional)
+                </Label>
+                <Input
+                  value={editSection}
+                  onChange={(e) => setEditSection(e.target.value.toUpperCase())}
+                  placeholder="e.g., A or B1"
+                  className="h-11"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+                className="h-10 sm:h-11"
+                disabled={isUpdatingDetails}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveEditDetails}
+                className="h-10 sm:h-11"
+                disabled={isUpdatingDetails}
+              >
+                {isUpdatingDetails ? (
+                  <span className="flex items-center gap-2">
+                    <Loader className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </span>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Leave Class Confirmation - Step 1 */}
+        <Dialog
+          open={leaveConfirmStep === 1}
+          onOpenChange={(open) => {
+            if (!open) setLeaveConfirmStep(0);
+          }}
+        >
+          <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-amber-500 mb-1">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <DialogTitle className="text-lg sm:text-xl">
+                  Leave Class?
+                </DialogTitle>
+              </div>
+              <DialogDescription className="text-sm text-muted-foreground pt-1">
+                Are you sure you want to leave{" "}
+                <strong className="text-foreground">
+                  {leavingClass?.name}
+                </strong>
+                ? You will be removed from this class roster.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setLeaveConfirmStep(0)}
+                className="h-10 sm:h-11"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleConfirmLeaveStep1}
+                className="h-10 sm:h-11"
+              >
+                Continue
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Leave Class Confirmation - Step 2 (Final Warning with type confirmation) */}
+        <Dialog
+          open={leaveConfirmStep === 2}
+          onOpenChange={(open) => {
+            if (!open) setLeaveConfirmStep(0);
+          }}
+        >
+          <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-destructive mb-1">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <DialogTitle className="text-lg sm:text-xl">
+                  Final Confirmation
+                </DialogTitle>
+              </div>
+              <DialogDescription className="text-sm text-muted-foreground pt-1">
+                This action cannot be undone. Are you 100% sure you want to leave{" "}
+                <strong className="text-foreground">
+                  {leavingClass?.name}
+                </strong>
+                ?
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2 py-3">
+              <Label className="text-xs font-medium text-muted-foreground">
+                To confirm, please type <span className="font-bold text-destructive">leave</span> below:
+              </Label>
+              <Input
+                value={leaveConfirmInput}
+                onChange={(e) => setLeaveConfirmInput(e.target.value)}
+                placeholder='Type "leave" to confirm'
+                className="h-11 border-destructive/40 focus-visible:ring-destructive"
+              />
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-2">
+              <Button
+                variant="outline"
+                onClick={() => setLeaveConfirmStep(0)}
+                className="h-10 sm:h-11"
+                disabled={isLeavingClass}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleConfirmLeaveStep2}
+                className="h-10 sm:h-11"
+                disabled={
+                  isLeavingClass ||
+                  leaveConfirmInput.trim().toLowerCase() !== "leave"
+                }
+              >
+                {isLeavingClass ? (
+                  <span className="flex items-center gap-2">
+                    <Loader className="h-4 w-4 animate-spin" />
+                    Leaving Class...
+                  </span>
+                ) : (
+                  "Yes, Leave Class"
                 )}
               </Button>
             </div>

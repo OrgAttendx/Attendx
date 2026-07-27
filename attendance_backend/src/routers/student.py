@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
 from src.core.database import engine
 from src.core.utils import calculate_distance
-from src.models.schemas import JoinClassRequest, SubmitAttendanceCode
+from src.models.schemas import JoinClassRequest, SubmitAttendanceCode, UpdateStudentClassDetailsRequest
 from src.core.security import require_student
 from src import queries
 from typing import Optional
@@ -313,4 +313,4 @@ async def get_student_attendance_history(class_id: int, student_id: int, current
         raise
     except Exception as e:
         logger.exception(f"❌ [STUDENT/ATTENDANCE_HISTORY] Error fetching history class_id={class_id}, student_id={student_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
