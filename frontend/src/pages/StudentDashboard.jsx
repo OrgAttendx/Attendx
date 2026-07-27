@@ -237,34 +237,16 @@ const StudentDashboard = () => {
       setLoading(true);
       const classes = await studentAPI.getEnrolledClasses();
 
-      const classesWithDetails = await Promise.all(
-        classes.map(async (cls) => {
-          try {
-            const details = await studentAPI.getClassDetails(cls.class_id);
-            return {
-              id: cls.class_id,
-              name: cls.class_name,
-              facultyName: details.faculty_name,
-              attendanceRate: details.attendance_rate || 0,
-              mode: "CODE",
-              joinCode: cls.join_code,
-              rollNumber: cls.roll_number || "",
-              section: cls.section || "",
-            };
-          } catch {
-            return {
-              id: cls.class_id,
-              name: cls.class_name,
-              facultyName: "Unknown Faculty",
-              attendanceRate: 0,
-              mode: "CODE",
-              joinCode: cls.join_code,
-              rollNumber: cls.roll_number || "",
-              section: cls.section || "",
-            };
-          }
-        }),
-      );
+      const classesWithDetails = (classes || []).map((cls) => ({
+        id: cls.class_id,
+        name: cls.class_name,
+        facultyName: cls.faculty_name || "Unknown Faculty",
+        attendanceRate: Number(cls.attendance_rate ?? 0),
+        mode: "CODE",
+        joinCode: cls.join_code,
+        rollNumber: cls.roll_number || "",
+        section: cls.section || "",
+      }));
 
       setEnrolledClasses(classesWithDetails);
     } catch {
