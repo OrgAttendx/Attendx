@@ -304,12 +304,7 @@ const StudentDashboard = () => {
     setLeaveConfirmStep(1);
   };
 
-  const handleConfirmLeaveStep1 = () => {
-    setLeaveConfirmInput("");
-    setLeaveConfirmStep(2);
-  };
-
-  const handleConfirmLeaveStep2 = async () => {
+  const handleConfirmLeave = async () => {
     if (!leavingClass) return;
 
     if (leaveConfirmInput.trim().toLowerCase() !== "leave") {
@@ -1182,16 +1177,20 @@ const StudentDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Leave Class Confirmation - Step 1 */}
+        {/* Leave Class Confirmation */}
         <Dialog
           open={leaveConfirmStep === 1}
           onOpenChange={(open) => {
-            if (!open) setLeaveConfirmStep(0);
+            if (!open) {
+              setLeaveConfirmStep(0);
+              setLeavingClass(null);
+              setLeaveConfirmInput("");
+            }
           }}
         >
           <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
             <DialogHeader>
-              <div className="flex items-center gap-2 text-amber-500 mb-1">
+              <div className="flex items-center gap-2 text-destructive mb-1">
                 <AlertTriangle className="h-5 w-5 shrink-0" />
                 <DialogTitle className="text-lg sm:text-xl">
                   Leave Class?
@@ -1203,49 +1202,6 @@ const StudentDashboard = () => {
                   {leavingClass?.name}
                 </strong>
                 ? You will be removed from this class roster.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => setLeaveConfirmStep(0)}
-                className="h-10 sm:h-11"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleConfirmLeaveStep1}
-                className="h-10 sm:h-11"
-              >
-                Continue
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Leave Class Confirmation - Step 2 (Final Warning with type confirmation) */}
-        <Dialog
-          open={leaveConfirmStep === 2}
-          onOpenChange={(open) => {
-            if (!open) setLeaveConfirmStep(0);
-          }}
-        >
-          <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
-            <DialogHeader>
-              <div className="flex items-center gap-2 text-destructive mb-1">
-                <AlertTriangle className="h-5 w-5 shrink-0" />
-                <DialogTitle className="text-lg sm:text-xl">
-                  Final Confirmation
-                </DialogTitle>
-              </div>
-              <DialogDescription className="text-sm text-muted-foreground pt-1">
-                This action cannot be undone. Are you 100% sure you want to leave{" "}
-                <strong className="text-foreground">
-                  {leavingClass?.name}
-                </strong>
-                ?
               </DialogDescription>
             </DialogHeader>
 
@@ -1264,7 +1220,11 @@ const StudentDashboard = () => {
             <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-2">
               <Button
                 variant="outline"
-                onClick={() => setLeaveConfirmStep(0)}
+                onClick={() => {
+                  setLeaveConfirmStep(0);
+                  setLeavingClass(null);
+                  setLeaveConfirmInput("");
+                }}
                 className="h-10 sm:h-11"
                 disabled={isLeavingClass}
               >
@@ -1272,7 +1232,7 @@ const StudentDashboard = () => {
               </Button>
               <Button
                 variant="destructive"
-                onClick={handleConfirmLeaveStep2}
+                onClick={handleConfirmLeave}
                 className="h-10 sm:h-11"
                 disabled={
                   isLeavingClass ||
@@ -1285,7 +1245,7 @@ const StudentDashboard = () => {
                     Leaving Class...
                   </span>
                 ) : (
-                  "Yes, Leave Class"
+                  "Leave Class"
                 )}
               </Button>
             </div>
