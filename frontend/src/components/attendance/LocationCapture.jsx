@@ -129,7 +129,7 @@ export default function LocationCapture({
         {status === "idle" && (
           <p>
             Your coordinates are only used for this session to verify you are
-            within the classroom radius.
+            within the classroom zone.
           </p>
         )}
 
@@ -143,7 +143,29 @@ export default function LocationCapture({
           </div>
         )}
 
-        {status === "success" && location && (
+        {status === "success" && location && location.accuracy > 500 ? (
+          <div className="space-y-3 rounded-2xl border border-amber-400/80 bg-amber-50/90 dark:bg-amber-950/40 p-4 text-amber-900 dark:text-amber-200">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300">
+                <AlertCircle className="h-4 w-4" />
+                Location Accuracy Too Low (±{Math.round(location.accuracy)}m)
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-200/90 text-amber-950 dark:bg-amber-900 dark:text-amber-100">
+                Required: ≤ ±500m
+              </span>
+            </div>
+            <p className="text-xs text-amber-800 dark:text-amber-300">
+              GPS precision is too low for location verification. Turn <strong>Wi-Fi ON</strong>, turn <strong>Battery Saver OFF</strong>, or step near a window and click below to re-capture location.
+            </p>
+            <button
+              type="button"
+              onClick={captureLocation}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-950 dark:text-amber-100 bg-amber-200/90 dark:bg-amber-800 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition-colors"
+            >
+              <MapPin className="h-3.5 w-3.5" /> Re-capture Location
+            </button>
+          </div>
+        ) : status === "success" && location && (
           <div className="space-y-3 rounded-2xl border border-green-200 bg-green-50/90 p-4 text-green-800">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 font-semibold">
