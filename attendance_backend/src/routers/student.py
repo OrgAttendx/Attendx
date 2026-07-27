@@ -27,7 +27,19 @@ async def get_enrolled_classes(student_id: int, current_user: dict = Depends(req
                      c.join_code,
                      u.name as faculty_name,
                      ce.roll_number,
-                     ce.section
+                     ce.section,
+                     COALESCE(
+                         (
+                             SELECT COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END)::FLOAT
+                                    / NULLIF(COUNT(*), 0) * 100
+                             FROM attendance_sessions s2
+                             LEFT JOIN attendance_records ar
+                                    ON ar.session_id = s2.session_id AND ar.student_id = :student_id
+                             WHERE s2.class_id = c.class_id
+                               AND (s2.status != 'ACTIVE' OR ar.status IS NOT NULL)
+                         ),
+                         0
+                     ) as attendance_rate
             FROM class_enrollments ce
             JOIN classes c ON ce.class_id = c.class_id
             JOIN users u ON c.faculty_id = u.user_id

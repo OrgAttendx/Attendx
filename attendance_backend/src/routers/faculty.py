@@ -46,10 +46,23 @@ async def get_faculty_classes(faculty_id: int, current_user: dict = Depends(requ
     try:
         sql = text(
             """
-            SELECT class_id, class_name, join_code
-            FROM classes
-            WHERE faculty_id = :faculty_id
-            ORDER BY class_name
+            SELECT c.class_id, c.class_name, c.join_code,
+                   COALESCE(ce.cnt, 0)::int AS students_count,
+                   COALESCE(s.cnt, 0)::int  AS sessions_count,
+                   s.last_session
+            FROM classes c
+            LEFT JOIN (
+                SELECT class_id, COUNT(*) AS cnt
+                FROM class_enrollments
+                GROUP BY class_id
+            ) ce ON ce.class_id = c.class_id
+            LEFT JOIN (
+                SELECT class_id, COUNT(*) AS cnt, MAX(start_time) AS last_session
+                FROM attendance_sessions
+                GROUP BY class_id
+            ) s ON s.class_id = c.class_id
+            WHERE c.faculty_id = :faculty_id
+            ORDER BY c.class_name
             """
         )
         async with engine.connect() as conn:

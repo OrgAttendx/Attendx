@@ -301,43 +301,21 @@ const FacultyDashboard = () => {
     return Math.min(10000, Math.max(10, Math.round(num)));
   };
 
-  // Helper: enrich a class with dynamic stats (students count, sessions count, last session time)
-  const enrichClassWithStats = async (cls) => {
-    try {
-      // Number of enrolled students
-      const students = await facultyAPI.getClassStudents(cls.class_id);
-      const students_count = Array.isArray(students) ? students.length : 0;
-
-      // Authoritative sessions stats from backend
-      const stats = await facultyAPI.getClassSessionsStats(cls.class_id);
-      const sessions_count = stats?.sessions_count ?? 0;
-      const last_session = stats?.last_session
-        ? new Date(stats.last_session).toLocaleString()
-        : null;
-
-      return { ...cls, students_count, sessions_count, last_session };
-    } catch (_e) {
-      // On failure, return class with safe defaults
-      return {
-        ...cls,
-        students_count: 0,
-        sessions_count: 0,
-        last_session: null,
-      };
-    }
-  };
-
   // Load classes and active sessions
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Load classes
+        // Load classes (backend returns students_count, sessions_count, last_session inline)
         const apiClasses = await facultyAPI.getClasses();
-        // Enrich each class with dynamic stats in parallel
-        const enriched = await Promise.all(
-          (apiClasses || []).map((c) => enrichClassWithStats(c)),
-        );
-        setClasses(enriched);
+        const classes = (apiClasses || []).map((c) => ({
+          ...c,
+          students_count: c.students_count ?? 0,
+          sessions_count: c.sessions_count ?? 0,
+          last_session: c.last_session
+            ? new Date(c.last_session).toLocaleString()
+            : null,
+        }));
+        setClasses(classes);
 
         // Load active sessions from backend to sync state
         const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -388,9 +366,13 @@ const FacultyDashboard = () => {
     try {
       setCreatingClass(true);
       const createdClass = await facultyAPI.createClass(newClass.name);
-      // Enrich the newly created class with stats (will likely be zeros initially)
-      const enriched = await enrichClassWithStats(createdClass);
-      setClasses([...classes, enriched]);
+      // New class starts with zero students/sessions
+      setClasses([...classes, {
+        ...createdClass,
+        students_count: 0,
+        sessions_count: 0,
+        last_session: null,
+      }]);
       setNewClass({ name: "", joinCode: "" });
       setIsCreateDialogOpen(false);
       toast({
