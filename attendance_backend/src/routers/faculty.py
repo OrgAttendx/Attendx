@@ -780,6 +780,7 @@ async def get_all_sessions_with_attendance(class_id: int, current_user: dict = D
                 s.session_id,
                 ce.student_id,
                 u.name as student_name,
+                u.email as student_email,
                 ce.roll_number,
                 ce.section,
                 COALESCE(ar.status, 'ABSENT') as status,
@@ -811,6 +812,7 @@ async def get_all_sessions_with_attendance(class_id: int, current_user: dict = D
             records_by_session[sid].append({
                 "student_id": r["student_id"],
                 "student_name": r["student_name"],
+                "email": r["student_email"],
                 "roll_number": r["roll_number"],
                 "section": r["section"],
                 "status": r["status"],

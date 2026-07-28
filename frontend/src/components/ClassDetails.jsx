@@ -464,6 +464,118 @@ const ClassDetails = ({ classItem }) => {
     }
   };
 
+  // Shared helper: builds a single datewise pivot sheet from a list of sessions
+  // Each session gets its own column. If multiple sessions on the same date,
+  // columns show "date HH:mm" to distinguish them.
+  const buildDatewisePivotSheet = (sessionsList) => {
+    // Sort sessions chronologically
+    const sorted = [...sessionsList].sort(
+      (a, b) => new Date(a.start_time) - new Date(b.start_time)
+    );
+
+    // Build session column keys: { key, sessionId }
+    // Count sessions per date to decide labeling
+    const dateCounts = {};
+    sorted.forEach((s) => {
+      if (!s.start_time) return;
+      const d = new Date(s.start_time).toLocaleDateString("en-CA");
+      dateCounts[d] = (dateCounts[d] || 0) + 1;
+    });
+
+    const sessionColumns = []; // { key: column header string, sessionId }
+    const dateSessionIndex = {}; // track per-date session numbering
+    sorted.forEach((s) => {
+      if (!s.start_time) return;
+      const dt = new Date(s.start_time);
+      const dateStr = dt.toLocaleDateString("en-CA");
+      const timeStr = dt.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+
+      let colKey;
+      if (dateCounts[dateStr] > 1) {
+        // Multiple sessions on this date — show date + time
+        if (!dateSessionIndex[dateStr]) dateSessionIndex[dateStr] = 0;
+        dateSessionIndex[dateStr]++;
+        colKey = `${dateStr} ${timeStr}`;
+      } else {
+        colKey = dateStr;
+      }
+
+      sessionColumns.push({ key: colKey, sessionId: s.session_id });
+    });
+
+    // Build student map: studentId -> { info, sessionStatus: { sessionId -> P/A } }
+    const studentMap = new Map();
+
+    sorted.forEach((session) => {
+      const recs = Array.isArray(session.records) ? session.records : [];
+      recs.forEach((r) => {
+        const sid = r.student_id;
+        if (!studentMap.has(sid)) {
+          studentMap.set(sid, {
+            roll_number: r.roll_number || "—",
+            student_name: r.student_name || "",
+            email: r.email || "—",
+            section: r.section || "—",
+            sessionStatus: {},
+          });
+        }
+        const student = studentMap.get(sid);
+        const isPresent = r.status === "PRESENT" || r.status === "LATE";
+        student.sessionStatus[session.session_id] = isPresent ? "P" : "A";
+      });
+    });
+
+    // Build rows sorted by section first (e.g. A, B, C...), then by roll number
+    const students = Array.from(studentMap.values()).sort((a, b) => {
+      const secA = (a.section || "—").toUpperCase();
+      const secB = (b.section || "—").toUpperCase();
+      if (secA !== secB) {
+        return secA.localeCompare(secB, undefined, { numeric: true });
+      }
+      return (a.roll_number || "").localeCompare(b.roll_number || "", undefined, { numeric: true });
+    });
+
+    const sheetData = students.map((s) => {
+      const row = {
+        "Roll Number": s.roll_number,
+        "Student Name": s.student_name,
+        "Email": s.email,
+        "Section": s.section,
+      };
+      let totalPresent = 0;
+      sessionColumns.forEach((col) => {
+        const status = s.sessionStatus[col.sessionId] || "A";
+        row[col.key] = status;
+        if (status === "P") totalPresent++;
+      });
+      row["Total Present"] = totalPresent;
+      row["Total Sessions"] = sessionColumns.length;
+      row["Attendance %"] = sessionColumns.length > 0
+        ? ((totalPresent / sessionColumns.length) * 100).toFixed(1) + "%"
+        : "0.0%";
+      return row;
+    });
+
+    if (sheetData.length === 0) return null;
+
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    ws["!cols"] = [
+      { wch: 14 }, // Roll Number
+      { wch: 22 }, // Student Name
+      { wch: 28 }, // Email
+      { wch: 10 }, // Section
+      ...sessionColumns.map(() => ({ wch: 16 })),
+      { wch: 14 }, // Total Present
+      { wch: 14 }, // Total Sessions
+      { wch: 14 }, // Attendance %
+    ];
+    return ws;
+  };
+
   const exportDateRange = () => {
     try {
       setExportLoading(true);
@@ -499,57 +611,17 @@ const ClassDetails = ({ classItem }) => {
         return;
       }
 
-      const wb = XLSX.utils.book_new();
-
-      for (let i = 0; i < filteredSessions.length; i++) {
-        const session = filteredSessions[i];
-        const recs = Array.isArray(session.records) ? session.records : [];
-
-        const exportData = recs.map((r) => ({
-          "Roll Number": r.roll_number || "—",
-          Section: r.section || "—",
-          "Student Name": r.student_name,
-          Status: r.status === "LATE" ? "PRESENT" : r.status,
-          "Marked At": r.marked_at
-            ? new Date(r.marked_at + "Z").toLocaleString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })
-            : "—",
-        }));
-
-        const sTotals = session.totals || { present: 0, late: 0, absent: 0 };
-        const present = sTotals.present + (sTotals.late || 0);
-
-        exportData.push({});
-        exportData.push({
-          "Roll Number": "",
-          Section: "",
-          "Student Name": "SUMMARY",
-          Status: "",
-          "Marked At": "",
-        });
-        exportData.push({
-          "Roll Number": "",
-          Section: "",
-          "Student Name": "Present",
-          Status: present,
-          "Marked At": "",
-        });
-        exportData.push({
-          "Roll Number": "",
-          Section: "",
-          "Student Name": "Absent",
-          Status: sTotals.absent,
-          "Marked At": "",
-        });
-
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const dateStr = new Date(session.start_time).toLocaleDateString("en-CA");
-        const sheetName = `${dateStr}_S${i + 1}`.substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      const ws = buildDatewisePivotSheet(filteredSessions);
+      if (!ws) {
+        toast({ title: "No Data", description: "No student data found.", variant: "destructive" });
+        setExportLoading(false);
+        setExportProgress("");
+        return;
       }
+
+      const wb = XLSX.utils.book_new();
+      const sheetName = classItem.class_name.replace(/[\\/*?:\[\]]/g, "").substring(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
       const filename = `${classItem.class_name}_${startDate.toLocaleDateString(
         "en-CA"
@@ -558,7 +630,7 @@ const ClassDetails = ({ classItem }) => {
 
       toast({
         title: "Success",
-        description: `Exported ${filteredSessions.length} session(s) from date range.`,
+        description: `Exported datewise attendance for ${classItem.class_name}.`,
       });
       setShowDateRangeDialog(false);
     } catch (error) {
@@ -589,78 +661,24 @@ const ClassDetails = ({ classItem }) => {
         return;
       }
 
-      const wb = XLSX.utils.book_new();
-      const usedSheetNames = new Set();
-
-      for (let i = 0; i < rawSessions.length; i++) {
-        const session = rawSessions[i];
-        const recs = Array.isArray(session.records) ? session.records : [];
-
-        const exportData = recs.map((r) => ({
-          "Roll Number": r.roll_number || "—",
-          Section: r.section || "—",
-          "Student Name": r.student_name,
-          Status: r.status === "LATE" ? "PRESENT" : r.status,
-          "Marked At": r.marked_at
-            ? new Date(r.marked_at + "Z").toLocaleString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })
-            : "—",
-        }));
-
-        const sTotals = session.totals || { present: 0, late: 0, absent: 0 };
-        const present = sTotals.present + (sTotals.late || 0);
-
-        exportData.push({});
-        exportData.push({
-          "Roll Number": "",
-          Section: "",
-          "Student Name": "SUMMARY",
-          Status: "",
-          "Marked At": "",
-        });
-        exportData.push({
-          "Roll Number": "",
-          Section: "",
-          "Student Name": "Present",
-          Status: present,
-          "Marked At": "",
-        });
-        exportData.push({
-          "Roll Number": "",
-          Section: "",
-          "Student Name": "Absent",
-          Status: sTotals.absent,
-          "Marked At": "",
-        });
-
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const dateStr = new Date(session.start_time).toLocaleDateString("en-CA");
-        const timeStr = new Date(session.start_time)
-          .toLocaleTimeString("en-US", { hour12: false })
-          .replace(/:/g, "-");
-
-        let baseSheetName = `${dateStr}_${timeStr}`.substring(0, 28);
-        let sheetName = baseSheetName;
-        let counter = 1;
-
-        while (usedSheetNames.has(sheetName)) {
-          sheetName = `${baseSheetName}_${counter}`;
-          counter++;
-        }
-
-        usedSheetNames.add(sheetName);
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      const ws = buildDatewisePivotSheet(rawSessions);
+      if (!ws) {
+        toast({ title: "No Data", description: "No student data found.", variant: "destructive" });
+        setExportLoading(false);
+        setExportProgress("");
+        return;
       }
 
-      const filename = `${classItem.class_name}_AllSessions_Complete.xlsx`;
+      const wb = XLSX.utils.book_new();
+      const sheetName = classItem.class_name.replace(/[\\/*?:\[\]]/g, "").substring(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      const filename = `${classItem.class_name}_AllSessions_Datewise.xlsx`;
       XLSX.writeFile(wb, filename);
 
       toast({
         title: "Success",
-        description: `Exported ${rawSessions.length} session(s) successfully.`,
+        description: `Exported datewise attendance for ${classItem.class_name}.`,
       });
     } catch (error) {
       toast({

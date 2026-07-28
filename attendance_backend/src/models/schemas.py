@@ -29,6 +29,12 @@ class JoinClassRequest(BaseModel):
     section: Optional[str] = None  # Optional section label (A/B/etc)
 
 
+class UpdateStudentClassDetailsRequest(BaseModel):
+    student_id: int
+    roll_number: str
+    section: Optional[str] = None
+
+
 class MarkAttendanceRequest(BaseModel):
     session_id: int
     student_id: int
