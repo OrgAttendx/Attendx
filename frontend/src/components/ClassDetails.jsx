@@ -529,10 +529,15 @@ const ClassDetails = ({ classItem }) => {
       });
     });
 
-    // Build rows sorted by roll number
-    const students = Array.from(studentMap.values()).sort((a, b) =>
-      (a.roll_number || "").localeCompare(b.roll_number || "", undefined, { numeric: true })
-    );
+    // Build rows sorted by section first (e.g. A, B, C...), then by roll number
+    const students = Array.from(studentMap.values()).sort((a, b) => {
+      const secA = (a.section || "—").toUpperCase();
+      const secB = (b.section || "—").toUpperCase();
+      if (secA !== secB) {
+        return secA.localeCompare(secB, undefined, { numeric: true });
+      }
+      return (a.roll_number || "").localeCompare(b.roll_number || "", undefined, { numeric: true });
+    });
 
     const sheetData = students.map((s) => {
       const row = {
