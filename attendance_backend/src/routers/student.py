@@ -22,25 +22,12 @@ async def get_enrolled_classes(student_id: int, current_user: dict = Depends(req
     try:
         sql = text(
             """
-            SELECT c.class_id,
-                   c.class_name,
-                   c.join_code,
-                   u.name as faculty_name,
-                   ce.roll_number,
-                   ce.section,
-                   COALESCE(
-                       (
-                           SELECT ROUND(
-                               (COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END) * 100.0) / NULLIF(COUNT(s.session_id), 0)::numeric,
-                               1
-                           )::float
-                           FROM attendance_sessions s
-                           LEFT JOIN attendance_records ar 
-                               ON ar.session_id = s.session_id AND ar.student_id = ce.student_id
-                           WHERE s.class_id = c.class_id
-                       ),
-                       0.0
-                   )::float as attendance_rate
+                 SELECT c.class_id,
+                     c.class_name,
+                     c.join_code,
+                     u.name as faculty_name,
+                     ce.roll_number,
+                     ce.section
             FROM class_enrollments ce
             JOIN classes c ON ce.class_id = c.class_id
             JOIN users u ON c.faculty_id = u.user_id

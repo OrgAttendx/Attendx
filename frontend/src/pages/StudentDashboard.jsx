@@ -237,6 +237,7 @@ const StudentDashboard = () => {
       setLoading(true);
       const classes = await studentAPI.getEnrolledClasses();
 
+      // Backend returns faculty_name and attendance_rate inline — no per-class calls needed
       const classesWithDetails = (classes || []).map((cls) => ({
         id: cls.class_id,
         name: cls.class_name,
