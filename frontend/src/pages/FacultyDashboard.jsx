@@ -9,6 +9,7 @@ import {
   Search,
   Trash2,
   CheckCircle,
+  AlertCircle,
   BookOpen,
   Sparkles,
   TrendingUp,
@@ -297,6 +298,7 @@ const FacultyDashboard = () => {
   const [classToStart, setClassToStart] = useState(null);
   const [sessionLocation, setSessionLocation] = useState(null);
   const [diameterMeters, setDiameterMeters] = useState(500);
+  const [highAccuracyAlertOpen, setHighAccuracyAlertOpen] = useState(false);
 
   // Helper: validate and clamp diameter to 10..10000 meters (default 500m)
   const getValidDiameter = (val) => {
@@ -415,6 +417,9 @@ const FacultyDashboard = () => {
   // Handler for location capture
   const handleLocationCaptured = (locationData) => {
     setSessionLocation(locationData);
+    if (locationData && locationData.accuracy >= 250) {
+      setHighAccuracyAlertOpen(true);
+    }
   };
 
   // Start session with optional location
@@ -456,6 +461,7 @@ const FacultyDashboard = () => {
         }
 
         if (sessionLocation.accuracy > 500) {
+          setHighAccuracyAlertOpen(true);
           toast({
             title: `Location Accuracy Too Low (±${Math.round(sessionLocation.accuracy)}m) ⚠️`,
             description: "GPS accuracy is too low for geofencing. We suggest starting WITHOUT location (Code-Only Mode) — students will only need the 6-digit code to mark attendance and won't need to capture location!",
@@ -1361,6 +1367,46 @@ const FacultyDashboard = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deletingClass ? "Deleting..." : "Delete Permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* High Location Accuracy Warning Alert Dialog */}
+      <AlertDialog
+        open={highAccuracyAlertOpen}
+        onOpenChange={setHighAccuracyAlertOpen}
+      >
+        <AlertDialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              High Location Uncertainty (±{Math.round(sessionLocation?.accuracy || 0)}m)
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2 text-sm text-foreground/90">
+              <span>
+                Your captured location has a high margin of error (<strong>±{Math.round(sessionLocation?.accuracy || 0)}m</strong>), which exceeds the 500m geofencing limit for location verification.
+              </span>
+              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/50 p-3.5 border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+                <p className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                  💡 Recommended Action: Code-Only Mode
+                </p>
+                <p>
+                  Please choose <strong>"Start Without Location" (Code-Only Mode)</strong>. Students will only need to enter the unique 6-digit code to mark their attendance — no location capture is required from students!
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2 pt-2">
+            <AlertDialogCancel className="w-full sm:w-auto">Dismiss</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setHighAccuracyAlertOpen(false);
+                proceedWithSessionStart(false);
+              }}
+              className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+            >
+              Start Without Location (Code-Only)
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
