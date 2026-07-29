@@ -46,6 +46,7 @@ import { studentAPI } from "@/services/api";
 import { attendanceApi } from "@/api/attendance";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import LocationCapture from "@/components/attendance/LocationCapture";
+import ForcePasswordChangeModal from "@/components/ForcePasswordChangeModal";
 
 const monthNames = [
   "January",
@@ -1252,6 +1253,9 @@ const StudentDashboard = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Mandatory Password Change Modal for First-Time Logins */}
+        <ForcePasswordChangeModal />
       </div>
       <p className="text-center text-xs text-muted-foreground py-6">
         &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.

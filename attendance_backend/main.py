@@ -97,6 +97,30 @@ app.include_router(faculty.router)
 app.include_router(student.router)
 
 
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 App startup: checking database migrations...")
+    try:
+        from src.core.database import engine
+        from sqlalchemy import text
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                ALTER TABLE users 
+                ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+            """))
+            await conn.execute(text("""
+                ALTER TABLE class_enrollments 
+                ADD COLUMN IF NOT EXISTS roll_number VARCHAR(50);
+            """))
+            await conn.execute(text("""
+                ALTER TABLE class_enrollments 
+                ADD COLUMN IF NOT EXISTS section VARCHAR(50);
+            """))
+        logger.info("✅ Database migration checks completed successfully.")
+    except Exception as e:
+        logger.warning(f"⚠️ Startup database migration check failed or skipped: {e}")
+
+
 @app.get("/")
 def root():
     logger.info("Root endpoint hit")

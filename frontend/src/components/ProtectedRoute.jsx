@@ -1,6 +1,7 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import ForcePasswordChangeModal from "@/components/ForcePasswordChangeModal";
 
 const ProtectedRoute = ({ children, role }) => {
   const { user, isLoading } = useAuth();
@@ -24,8 +25,13 @@ const ProtectedRoute = ({ children, role }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // ✅ If all checks pass, render the protected page
-  return children;
+  // ✅ If all checks pass, render the protected page & modal
+  return (
+    <>
+      {children}
+      <ForcePasswordChangeModal />
+    </>
+  );
 };
 
 export default ProtectedRoute;

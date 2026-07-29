@@ -23,6 +23,7 @@ import {
   Search,
   X,
   UserMinus,
+  UserPlus,
   Trash2,
   AlertTriangle,
   Loader,
@@ -30,6 +31,7 @@ import {
   CalendarX,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { BulkStudentUploadModal } from "./BulkStudentUploadModal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,6 +68,9 @@ const ClassDetails = ({ classItem }) => {
   // Delete Session confirmation state
   const [deleteSessionStep, setDeleteSessionStep] = useState(0); // 0: closed, 1: step 1, 2: step 2
   const [deleteSessionInput, setDeleteSessionInput] = useState("");
+
+  // Bulk Upload Students Modal state
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
 
   /* ---------------------------------------------------
      REACT QUERY: Fetch all sessions & attendance at once
@@ -801,7 +806,17 @@ const ClassDetails = ({ classItem }) => {
               <CardTitle className="text-base sm:text-lg">
                 Attendance for {selectedDate || "N/A"}
               </CardTitle>
-              <div className="flex flex-col w-full sm:w-auto gap-2">
+              <div className="flex flex-wrap items-center w-full sm:w-auto gap-2">
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => setShowBulkUploadModal(true)}
+                  className="flex items-center justify-center gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto shadow-sm"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>Bulk Add Students</span>
+                </Button>
+
                 {exportProgress && (
                   <span className="text-xs text-muted-foreground">
                     {exportProgress}
@@ -1222,6 +1237,17 @@ const ClassDetails = ({ classItem }) => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Upload Modal */}
+      <BulkStudentUploadModal
+        isOpen={showBulkUploadModal}
+        onClose={() => setShowBulkUploadModal(false)}
+        classId={classItem?.class_id}
+        className={classItem?.class_name}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["class-sessions", classItem?.class_id] });
+        }}
+      />
     </div>
   );
 };

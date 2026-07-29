@@ -1,5 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from sqlalchemy import text, bindparam
+import csv
+import io
+try:
+    import openpyxl
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
 from src.core.database import engine
 from src.core.utils import generate_code
 from src.models.schemas import CreateClassRequest, StartSessionRequest, MarkAttendanceRequest, AdminResetPasswordRequest
@@ -9,7 +16,7 @@ from typing import List, Optional, Dict, Any
 import os
 import secrets
 from src.core.config import RESET_ADMIN_KEY
-from src.core.security import require_faculty
+from src.core.security import require_faculty, get_password_hash
 from src.core.logging_config import get_logger
 
 logger = get_logger("faculty")
@@ -847,5 +854,166 @@ async def get_all_sessions_with_attendance(class_id: int, current_user: dict = D
     except Exception as e:
         logger.exception(f"❌ [FACULTY/EXPORT_ALL_SESSIONS] Error exporting sessions for class_id={class_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/faculty/classes/{class_id}/bulk-register-students")
+async def bulk_register_students(
+    class_id: int,
+    file: UploadFile = File(...),
+    default_password: Optional[str] = Form("Student@123"),
+    current_user: dict = Depends(require_faculty)
+):
+    """Bulk register students from CSV or Excel file and enroll them into a class with default password and mandatory first-login password change."""
+    logger.info(f"👥 [FACULTY/BULK_REGISTER] Bulk registering students for class_id={class_id}, filename={file.filename}")
+    
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    filename = file.filename.lower()
+    if not (filename.endswith(".csv") or filename.endswith(".xlsx") or filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a .csv or .xlsx file.")
+    
+    content = await file.read()
+    raw_rows = []
+    
+    try:
+        if filename.endswith(".csv"):
+            text_content = content.decode("utf-8-sig", errors="ignore")
+            csv_reader = csv.DictReader(io.StringIO(text_content))
+            for row in csv_reader:
+                raw_rows.append({str(k).strip().lower(): str(v).strip() for k, v in row.items() if k is not None})
+        else:
+            if not HAS_OPENPYXL:
+                raise HTTPException(status_code=400, detail="The openpyxl library is required on backend to process .xlsx files. Please upload a .csv file or install openpyxl.")
+            wb = openpyxl.load_workbook(filename=io.BytesIO(content), data_only=True)
+            sheet = wb.active
+            iter_rows = list(sheet.iter_rows(values_only=True))
+            if iter_rows:
+                headers = [str(h).strip().lower() if h is not None else "" for h in iter_rows[0]]
+                for r in iter_rows[1:]:
+                    if not r or not any(r):
+                        continue
+                    row_dict = {}
+                    for idx, val in enumerate(r):
+                        if idx < len(headers) and headers[idx]:
+                            row_dict[headers[idx]] = str(val).strip() if val is not None else ""
+                    raw_rows.append(row_dict)
+    except Exception as e:
+        logger.exception(f"❌ [FACULTY/BULK_REGISTER] Failed to parse file {file.filename}: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse spreadsheet file: {str(e)}")
+    
+    if not raw_rows:
+        raise HTTPException(status_code=400, detail="The uploaded file contains no data rows.")
+    
+    def get_field(row: dict, keys: list) -> str:
+        for k in keys:
+            if k in row and row[k]:
+                return row[k].strip()
+        return ""
+
+    created_users_count = 0
+    enrolled_count = 0
+    updated_enrollment_count = 0
+    errors = []
+    
+    default_pwd = default_password or "Student@123"
+    hashed_default_pwd = get_password_hash(default_pwd)
+    
+    async with engine.begin() as conn:
+        # Verify class exists
+        class_check = await conn.execute(
+            text("SELECT class_id FROM classes WHERE class_id = :class_id"),
+            {"class_id": class_id}
+        )
+        if not class_check.fetchone():
+            raise HTTPException(status_code=404, detail="Class not found")
+        
+        for idx, row in enumerate(raw_rows, start=2):  # row 1 is header
+            name = get_field(row, ["name", "student_name", "student name", "full_name", "full name"])
+            email = get_field(row, ["email", "student_email", "student email", "mail"]).lower()
+            roll_number = get_field(row, ["roll_number", "roll number", "roll_no", "roll no", "rollno", "id"])
+            section = get_field(row, ["section", "sec"])
+            
+            if not email or not name:
+                errors.append(f"Row {idx}: Missing email or name (name='{name}', email='{email}')")
+                continue
+            
+            # 1. Check or Create User
+            user_res = await conn.execute(
+                text("SELECT user_id FROM users WHERE LOWER(email) = :email"),
+                {"email": email}
+            )
+            user_row = user_res.fetchone()
+            
+            if user_row:
+                user_id = user_row[0]
+            else:
+                # Create user with default password and must_change_password = TRUE
+                ins_res = await conn.execute(
+                    text("""
+                        INSERT INTO users (name, email, password_hash, role, must_change_password)
+                        VALUES (:name, :email, :password_hash, 'STUDENT', TRUE)
+                        RETURNING user_id
+                    """),
+                    {
+                        "name": name,
+                        "email": email,
+                        "password_hash": hashed_default_pwd
+                    }
+                )
+                user_id = ins_res.fetchone()[0]
+                created_users_count += 1
+            
+            # 2. Check or Enroll in Class
+            enroll_res = await conn.execute(
+                text("SELECT enrollment_id FROM class_enrollments WHERE class_id = :class_id AND student_id = :student_id"),
+                {"class_id": class_id, "student_id": user_id}
+            )
+            enroll_row = enroll_res.fetchone()
+            
+            if enroll_row:
+                # Update existing enrollment details
+                await conn.execute(
+                    text("""
+                        UPDATE class_enrollments 
+                        SET roll_number = COALESCE(NULLIF(:roll_number, ''), roll_number),
+                            section = COALESCE(NULLIF(:section, ''), section)
+                        WHERE class_id = :class_id AND student_id = :student_id
+                    """),
+                    {
+                        "class_id": class_id,
+                        "student_id": user_id,
+                        "roll_number": roll_number,
+                        "section": section
+                    }
+                )
+                updated_enrollment_count += 1
+            else:
+                # Create new enrollment
+                await conn.execute(
+                    text("""
+                        INSERT INTO class_enrollments (class_id, student_id, roll_number, section)
+                        VALUES (:class_id, :student_id, :roll_number, :section)
+                    """),
+                    {
+                        "class_id": class_id,
+                        "student_id": user_id,
+                        "roll_number": roll_number,
+                        "section": section
+                    }
+                )
+                enrolled_count += 1
+
+    logger.info(f"✅ [FACULTY/BULK_REGISTER] Bulk register complete for class_id={class_id}: Created {created_users_count} users, enrolled {enrolled_count} new, updated {updated_enrollment_count}")
+    return {
+        "message": f"Successfully processed {len(raw_rows)} rows.",
+        "total_rows": len(raw_rows),
+        "created_users_count": created_users_count,
+        "enrolled_count": enrolled_count,
+        "updated_enrollment_count": updated_enrollment_count,
+        "default_password": default_pwd,
+        "errors": errors
+    }
+
 
 

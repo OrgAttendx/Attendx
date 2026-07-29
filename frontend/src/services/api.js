@@ -233,6 +233,34 @@ export const facultyAPI = {
     });
     return data;
   },
+
+  async bulkRegisterStudents(class_id, file, default_password = "Student@123") {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (default_password) {
+      formData.append("default_password", default_password);
+    }
+    const { data } = await api.post(
+      `/faculty/classes/${class_id}/bulk-register-students`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      }
+    );
+    return data;
+  },
+};
+
+/* -----------------------------------------------------------
+   AUTH API
+------------------------------------------------------------ */
+export const authAPI = {
+  async changeFirstPassword(new_password) {
+    const { data } = await api.post("/auth/change-first-password", {
+      new_password,
+    });
+    return data;
+  },
 };
 
 /* -----------------------------------------------------------
