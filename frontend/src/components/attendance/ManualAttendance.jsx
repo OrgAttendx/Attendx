@@ -13,9 +13,8 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
 import { attendanceApi } from "@/api/attendance";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, X, UserMinus } from "lucide-react";
+import { Search, X, UserMinus, Loader2 } from "lucide-react";
 
 const ManualAttendance = ({
   classId,
@@ -269,12 +268,6 @@ const ManualAttendance = ({
             {/* Mobile stacked list */}
             <div className="space-y-3 sm:hidden">
               {filteredStudents.map((s) => {
-                const isMarked = attendance.some(
-                  (a) =>
-                    Number(a.session_id) === Number(sessionId) &&
-                    a.attendance_status === "PRESENT" &&
-                    (a.student_id === s.user_id || a.student_name === s.name)
-                );
                 const isChecked = attended.includes(s.user_id);
 
                 return (
@@ -296,18 +289,17 @@ const ManualAttendance = ({
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                        <Checkbox
-                          checked={isChecked}
-                          onCheckedChange={(checked) => toggleImmediate(s, checked)}
-                          disabled={loading || !!rowLoading[s.user_id]}
-                        />
-                        {isMarked && (
-                          <Badge
-                            variant="outline"
-                            className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]"
-                          >
-                            Via Code
-                          </Badge>
+                        {rowLoading[s.user_id] ? (
+                          <div className="flex items-center gap-1.5 text-xs text-primary font-medium py-1 animate-pulse">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                            <span>Saving...</span>
+                          </div>
+                        ) : (
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => toggleImmediate(s, checked)}
+                            disabled={loading || !!rowLoading[s.user_id]}
+                          />
                         )}
                       </div>
                     </div>
@@ -333,12 +325,6 @@ const ManualAttendance = ({
                   </TableHeader>
                   <TableBody>
                     {filteredStudents.map((s) => {
-                      const isMarked = attendance.some(
-                        (a) =>
-                          Number(a.session_id) === Number(sessionId) &&
-                          a.attendance_status === "PRESENT" &&
-                          (a.student_id === s.user_id || a.student_name === s.name)
-                      );
                       const isChecked = attended.includes(s.user_id);
 
                       return (
@@ -355,20 +341,19 @@ const ManualAttendance = ({
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <Checkbox
-                                checked={isChecked}
-                                onCheckedChange={(checked) =>
-                                  toggleImmediate(s, checked)
-                                }
-                                disabled={loading || !!rowLoading[s.user_id]}
-                              />
-                              {isMarked && (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
-                                >
-                                  Via Code
-                                </Badge>
+                              {rowLoading[s.user_id] ? (
+                                <div className="flex items-center gap-1.5 text-xs text-primary font-medium py-1 animate-pulse">
+                                  <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                                  <span className="text-muted-foreground text-[11px]">Saving...</span>
+                                </div>
+                              ) : (
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) =>
+                                    toggleImmediate(s, checked)
+                                  }
+                                  disabled={loading || !!rowLoading[s.user_id]}
+                                />
                               )}
                             </div>
                           </TableCell>

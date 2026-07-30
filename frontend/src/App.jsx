@@ -8,8 +8,8 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AttendanceProvider } from "@/contexts/AttendanceContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
+// import ForgotPassword from "@/pages/ForgotPassword";
+// import ResetPassword from "@/pages/ResetPassword";
 import FacultyDashboard from "@/pages/FacultyDashboard";
 import StudentDashboard from "@/pages/StudentDashboard";
 import Index from "./pages/Index";
@@ -32,8 +32,8 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<Login />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/reset-password" element={<ResetPassword />} />
+                {/* <Route path="/forgot-password" element={<ForgotPassword />} /> */}
+                {/* <Route path="/reset-password" element={<ResetPassword />} /> */}
                 <Route path="/register" element={<Register />} />
 
                 {/* Faculty route */}

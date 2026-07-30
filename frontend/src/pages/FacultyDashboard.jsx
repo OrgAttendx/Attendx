@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { facultyAPI, api } from "@/services/api";
 import {
   Plus,
@@ -7,282 +7,33 @@ import {
   Play,
   Filter,
   Search,
-  Trash2,
   CheckCircle,
-  AlertCircle,
   BookOpen,
   Sparkles,
   TrendingUp,
-  Clock,
   KeyRound,
-  Eye,
-  EyeOff,
-  SlidersHorizontal,
   Download,
-  X,
-  BarChart2,
-  FileSpreadsheet,
-  UserPlus,
-  MoreVertical,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/enhanced-button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { useAttendance } from "@/contexts/AttendanceContext";
-import { Badge } from "@/components/ui/badge";
 import ClassDetails from "@/components/ClassDetails";
-import LocationCapture from "@/components/attendance/LocationCapture";
 import BulkStudentUploadModal from "@/components/BulkStudentUploadModal";
 import ClassStudentsModal from "@/components/ClassStudentsModal";
 
-const ClassCard = ({
-  classItem,
-  status,
-  onViewDetails,
-  onDelete,
-  onEndSession,
-  onStartSession,
-  onGoToAttendance,
-  onFilterExport,
-  onBulkUpload,
-  onViewStudents,
-  startingSession,
-}) => {
-  return (
-    <Card className="group relative overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-xl hover:border-primary/30 transition-all duration-300 hover:-translate-y-1">
-      {/* Decorative gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-      <CardHeader className="relative pb-3">
-        <div className="flex justify-between items-start gap-2">
-          <div className="flex-1 min-w-0">
-            <CardTitle className="text-base sm:text-lg font-semibold truncate">
-              {classItem.class_name}
-            </CardTitle>
-            <CardDescription className="font-mono text-xs sm:text-sm mt-1">
-              Code:{" "}
-              <span className="text-primary font-semibold">
-                {classItem.join_code}
-              </span>
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-            {status && (
-              <Badge
-                variant={
-                  status === "active"
-                    ? "default"
-                    : status === "ended"
-                      ? "secondary"
-                      : "outline"
-                }
-                className={
-                  status === "active"
-                    ? "bg-green-600 hover:bg-green-700 text-white text-xs"
-                    : "text-xs"
-                }
-              >
-                {status === "ended" ? (
-                  <span className="flex items-center">
-                    <CheckCircle className="h-3 w-3 mr-1 text-green-600 dark:text-green-400" />
-                    Ended
-                  </span>
-                ) : status === "active" ? (
-                  <span className="flex items-center capitalize">
-                    <span className="h-1.5 w-1.5 mr-1.5 bg-white rounded-full animate-pulse"></span>
-                    Live
-                  </span>
-                ) : (
-                  status
-                )}
-              </Badge>
-            )}
-
-            {/* Three Dots Options Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
-                  title="Class options"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem
-                  onClick={() => onBulkUpload(classItem)}
-                  className="cursor-pointer gap-2 font-medium"
-                >
-                  <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Bulk Upload Students</span>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => onFilterExport(classItem)}
-                  className="cursor-pointer gap-2 font-medium"
-                >
-                  <SlidersHorizontal className="h-4 w-4 text-primary" />
-                  <span>Attendance Filter & Export</span>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => onDelete(classItem)}
-                  className="cursor-pointer gap-2 font-medium text-destructive focus:text-destructive focus:bg-destructive/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span>Delete Class</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="relative space-y-4 pt-0">
-        <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          <div
-            onClick={() => onViewStudents?.(classItem)}
-            className="flex items-center gap-2 p-2.5 sm:p-3 rounded-xl bg-muted/50 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 cursor-pointer transition-all duration-200 border border-transparent hover:border-blue-500/30 group/students"
-            title="Click to view student details"
-          >
-            <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10 group-hover/students:bg-blue-500/20 transition-colors">
-              <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-500" />
-            </div>
-            <div>
-              <p className="text-lg sm:text-xl font-bold group-hover/students:text-blue-600 dark:group-hover/students:text-blue-400 transition-colors">
-                {classItem.students_count || 0}
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground group-hover/students:text-blue-600 dark:group-hover/students:text-blue-400 font-medium transition-colors">
-                Students
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 p-2.5 sm:p-3 rounded-xl bg-muted/50">
-            <div className="p-1.5 sm:p-2 rounded-lg bg-purple-500/10">
-              <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-purple-500" />
-            </div>
-            <div>
-              <p className="text-lg sm:text-xl font-bold">
-                {classItem.sessions_count || 0}
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">
-                Sessions
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {classItem.last_session && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            <span>Last: {classItem.last_session}</span>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-2 pt-1">
-          {/* Main Action Button */}
-          <Button
-            variant={status === "active" ? "default" : "outline"}
-            size="sm"
-            className={`w-full h-9 sm:h-10 text-xs sm:text-sm font-semibold ${
-              status === "active" ? "shadow-lg bg-green-600 hover:bg-green-700 text-white" : ""
-            }`}
-            disabled={startingSession}
-            onClick={() => {
-              if (status === "active") {
-                onGoToAttendance(classItem);
-              } else {
-                onStartSession(classItem);
-              }
-            }}
-          >
-            <Play className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5" />
-            {startingSession
-              ? "Starting..."
-              : status === "active"
-                ? "Go to Attendance"
-                : status === "ended"
-                  ? "Start New Session"
-                  : "Start Session"}
-          </Button>
-
-          {/* View Details Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full h-9 sm:h-10 text-xs sm:text-sm flex items-center justify-center gap-1.5 font-medium hover:border-primary/50"
-            onClick={() => onViewDetails(classItem)}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            <span>View Details</span>
-          </Button>
-
-          {/* End Active Session Button */}
-          {status === "active" && (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="w-full h-8 text-xs font-semibold gap-1.5"
-              onClick={() => onEndSession(classItem)}
-            >
-              <X className="h-3.5 w-3.5" />
-              <span>End Active Session</span>
-            </Button>
-          )}
-        </div>
-        {status === "ended" && (
-          <div className="text-center text-green-600 font-semibold text-sm mt-2">
-            ✓ Session Complete
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-};
+// Extracted faculty sub-components & utilities
+import ClassCard from "@/components/faculty/ClassCard";
+import CreateClassModal from "@/components/faculty/CreateClassModal";
+import StartSessionLocationModal from "@/components/faculty/StartSessionLocationModal";
+import EndSessionConfirmModal from "@/components/faculty/EndSessionConfirmModal";
+import DeleteClassModal from "@/components/faculty/DeleteClassModal";
+import AttendanceFilterExportModal from "@/components/faculty/AttendanceFilterExportModal";
+import ResetPasswordModal from "@/components/faculty/ResetPasswordModal";
+import { exportAllClassesExcel } from "@/utils/exportAllClassesExcel";
 
 const FacultyDashboard = () => {
   const { toast } = useToast();
@@ -291,258 +42,132 @@ const FacultyDashboard = () => {
     updateCounter,
     startSession,
     endSession,
-    getSessionStatus,
   } = useAttendance();
   const navigate = useNavigate();
 
+  // Primary Data States
   const [classes, setClasses] = useState([]);
-  const [newClass, setNewClass] = useState({ name: "", joinCode: "" });
   const [searchTerm, setSearchTerm] = useState("");
+  const [endedClassIds, setEndedClassIds] = useState([]);
+  const [activeSessions, setActiveSessions] = useState({});
+  const [startingSession, setStartingSession] = useState(false);
+  const [deletingClass, setDeletingClass] = useState(false);
+  const [exportAllLoading, setExportAllLoading] = useState(false);
+
+  // Dialog / Modal Visibility States
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
-  const [endedClassIds, setEndedClassIds] = useState([]);
-  const [activeSessions, setActiveSessions] = useState({});
-  const [startingSession, setStartingSession] = useState(false); // Prevent double-click
-  const [creatingClass, setCreatingClass] = useState(false); // Prevent double-click on create
   const [endSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
   const [classToEnd, setClassToEnd] = useState(null);
   const [deleteClassDialogOpen, setDeleteClassDialogOpen] = useState(false);
-  const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
   const [classToDelete, setClassToDelete] = useState(null);
-  const [deletingClass, setDeletingClass] = useState(false);
 
   // Attendance filter/export dialog states
   const [filterExportOpen, setFilterExportOpen] = useState(false);
   const [filterClass, setFilterClass] = useState(null);
-  const [filterMinPct, setFilterMinPct] = useState("");
-  const [filterMaxPct, setFilterMaxPct] = useState("");
-  const [filterStudents, setFilterStudents] = useState([]);
-  const [filterLoading, setFilterLoading] = useState(false);
-  const [filterApplied, setFilterApplied] = useState(false);
-
-  // Export All Classes Excel state
-  const [exportAllLoading, setExportAllLoading] = useState(false);
 
   // Bulk Upload states
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [bulkUploadClass, setBulkUploadClass] = useState(null);
 
-  const handleOpenBulkUpload = (classItem) => {
-    setBulkUploadClass(classItem);
-    setBulkUploadOpen(true);
-  };
-
   // Student Details Modal states
   const [studentsModalOpen, setStudentsModalOpen] = useState(false);
   const [selectedStudentsClass, setSelectedStudentsClass] = useState(null);
 
-  const handleViewStudents = (classItem) => {
-    setSelectedStudentsClass(classItem);
-    setStudentsModalOpen(true);
-  };
-
   // Reset Password states
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
-  const [allUsers, setAllUsers] = useState([]);
-  const [userSearch, setUserSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [adminKey, setAdminKey] = useState("");
-  const [showNewPwd, setShowNewPwd] = useState(false);
-  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
-  const [resettingPassword, setResettingPassword] = useState(false);
 
   // Location-based attendance states
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [classToStart, setClassToStart] = useState(null);
-  const [sessionLocation, setSessionLocation] = useState(null);
-  const [diameterMeters, setDiameterMeters] = useState(500);
-  const [highAccuracyAlertOpen, setHighAccuracyAlertOpen] = useState(false);
 
-  // Helper: validate and clamp diameter to 10..10000 meters (default 500m)
-  const getValidDiameter = (val) => {
-    const num = Number(val);
-    if (isNaN(num) || num <= 0) return 500;
-    return Math.min(10000, Math.max(10, Math.round(num)));
-  };
+  // Load classes and active sessions from backend
+  const loadClasses = useCallback(async () => {
+    try {
+      const apiClasses = await facultyAPI.getClasses();
+      const loadedClasses = (apiClasses || []).map((c) => ({
+        ...c,
+        students_count: c.students_count ?? 0,
+        sessions_count: c.sessions_count ?? 0,
+        last_session: c.last_session
+          ? new Date(c.last_session).toLocaleString()
+          : null,
+      }));
+      setClasses(loadedClasses);
 
-  // Load classes and active sessions
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Load classes (backend returns students_count, sessions_count, last_session inline)
-        const apiClasses = await facultyAPI.getClasses();
-        const classes = (apiClasses || []).map((c) => ({
-          ...c,
-          students_count: c.students_count ?? 0,
-          sessions_count: c.sessions_count ?? 0,
-          last_session: c.last_session
-            ? new Date(c.last_session).toLocaleString()
-            : null,
-        }));
-        setClasses(classes);
-
-        // Load active sessions from backend to sync state
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
-        if (user.user_id) {
-          const { data: activeSessionsData } = await api.get(
-            "/faculty/sessions/active",
-            { params: { faculty_id: user.user_id } },
-          );
-          const sessionMap = {};
-          activeSessionsData.forEach((session) => {
-            sessionMap[session.class_id] = {
-              status: "active",
-              sessionId: session.session_id,
-              generatedCode: session.generated_code,
-              startTime: session.start_time,
-            };
-          });
-          setActiveSessions(sessionMap);
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to load classes",
-          variant: "destructive",
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      if (user.user_id) {
+        const { data: activeSessionsData } = await api.get(
+          "/faculty/sessions/active",
+          { params: { faculty_id: user.user_id } },
+        );
+        const sessionMap = {};
+        activeSessionsData.forEach((session) => {
+          sessionMap[session.class_id] = {
+            status: "active",
+            sessionId: session.session_id,
+            generatedCode: session.generated_code,
+            startTime: session.start_time,
+          };
         });
-        setClasses([]);
+        setActiveSessions(sessionMap);
       }
-    };
-    loadData();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load classes",
+        variant: "destructive",
+      });
+      setClasses([]);
+    }
   }, [toast]);
+
+  useEffect(() => {
+    loadClasses();
+  }, [loadClasses]);
 
   // Merge context sessions with loaded active sessions
   const mergedSessions = { ...activeSessions, ...sessions };
 
-  const handleCreateClass = async () => {
-    if (creatingClass) {
-      console.log("[FacultyDashboard] Ignoring duplicate create class click");
-      return;
-    }
-    if (!newClass.name.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Please enter a class name.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      setCreatingClass(true);
-      const createdClass = await facultyAPI.createClass(newClass.name);
-      // New class starts with zero students/sessions
-      setClasses([...classes, {
-        ...createdClass,
-        students_count: 0,
-        sessions_count: 0,
-        last_session: null,
-      }]);
-      setNewClass({ name: "", joinCode: "" });
-      setIsCreateDialogOpen(false);
-      toast({
-        title: "Class Created",
-        description: `${newClass.name} created successfully.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create class.",
-        variant: "destructive",
-      });
-    } finally {
-      setCreatingClass(false);
-    }
-  };
-
-  // Handler for location capture
-  const handleLocationCaptured = (locationData) => {
-    setSessionLocation(locationData);
-    if (locationData && locationData.accuracy >= 250) {
-      setHighAccuracyAlertOpen(true);
-    }
-  };
-
-  // Start session with optional location
-  const handleStartSession = async (classItem) => {
-    if (startingSession) {
-      console.log("[FacultyDashboard] Ignoring duplicate start session click");
-      return;
-    }
-
-    // Open location dialog to let faculty choose
+  // ---- Session Management Handlers ----
+  const handleStartSession = (classItem) => {
+    if (startingSession) return;
     setClassToStart(classItem);
-    setSessionLocation(null);
     setLocationDialogOpen(true);
   };
 
-  // Proceed with session start (with or without location)
-  const proceedWithSessionStart = async (useLocation) => {
+  const proceedWithSessionStart = async ({
+    useLocation,
+    sessionLocation,
+    currentDiameter,
+    calculatedRadius,
+  }) => {
     if (!classToStart) return;
 
     try {
       setStartingSession(true);
-      console.log(
-        `[FacultyDashboard] Starting session for class_id=${classToStart.class_id}`,
-      );
-
       let locationData = null;
-      const currentDiameter = getValidDiameter(diameterMeters);
-      const calculatedRadius = Math.max(5, Math.round(currentDiameter / 2));
 
-      if (useLocation) {
-        if (!sessionLocation) {
-          toast({
-            title: "Location Required ⚠️",
-            description: "Please capture your location first, or click 'Start Without Location' (Code-Only Mode) so students can mark attendance using only the code.",
-            variant: "destructive",
-          });
-          setStartingSession(false);
-          return;
-        }
-
-        if (sessionLocation.accuracy > 500) {
-          setHighAccuracyAlertOpen(true);
-          toast({
-            title: `Location Accuracy Too Low (±${Math.round(sessionLocation.accuracy)}m) ⚠️`,
-            description: "GPS accuracy is too low for geofencing. We suggest starting WITHOUT location (Code-Only Mode) — students will only need the 6-digit code to mark attendance and won't need to capture location!",
-            variant: "destructive",
-          });
-          setStartingSession(false);
-          return;
-        }
-
+      if (useLocation && sessionLocation) {
         locationData = {
           latitude: sessionLocation.latitude,
           longitude: sessionLocation.longitude,
           radius_meters: calculatedRadius,
         };
-        console.log("[FacultyDashboard] Using location with diameter", currentDiameter, "m (radius:", calculatedRadius, "m):", locationData);
       }
 
       const session = await facultyAPI.startSession(
         classToStart.class_id,
-        locationData,
+        locationData
       );
-      const sessionId = session.session_id;
-
-      console.log(
-        `[FacultyDashboard] Session created: session_id=${sessionId}`,
-      );
-
+      const sessionId = session?.session_id;
       if (!sessionId) throw new Error("Invalid session response");
 
-      // Update context
       startSession(classToStart.class_id);
-
-      // Close location dialog
       setLocationDialogOpen(false);
       setClassToStart(null);
-      setSessionLocation(null);
 
-      // Navigate to attendance page
       navigate(`/attendance/${classToStart.class_id}?sessionId=${sessionId}`);
 
       toast({
@@ -563,15 +188,13 @@ const FacultyDashboard = () => {
     }
   };
 
-  const handleEndSession = async (classItem) => {
-    // Open confirmation dialog
+  const handleEndSession = (classItem) => {
     setClassToEnd(classItem);
     setEndSessionDialogOpen(true);
   };
 
   const confirmEndSession = async () => {
     if (!classToEnd) return;
-
     try {
       const activeSession = mergedSessions[classToEnd.class_id];
       if (!activeSession?.sessionId) throw new Error("No active session found");
@@ -594,34 +217,17 @@ const FacultyDashboard = () => {
     }
   };
 
-  // NEW: Handle navigation to active attendance session
   const handleGoToAttendance = async (classItem) => {
     try {
-      // Always fetch from backend to ensure we have the latest active session
       const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const { data } = await api.get(
         `/class/${classItem.class_id}/active-session`,
-        { baseURL: API_URL },
+        { baseURL: API_URL }
       );
 
       if (data.session_id) {
-        // Update context with the active session info
-        if (!mergedSessions[classItem.class_id]?.sessionId) {
-          const newSessions = {
-            ...sessions,
-            [classItem.class_id]: {
-              status: "active",
-              sessionId: data.session_id,
-              generatedCode: data.generated_code,
-              startTime: data.start_time,
-            },
-          };
-          // Update sessions context (this assumes setSessions is accessible)
-          // If not, we can still navigate - the Attendance page will fetch the data
-        }
-
         navigate(
-          `/attendance/${classItem.class_id}?sessionId=${data.session_id}`,
+          `/attendance/${classItem.class_id}?sessionId=${data.session_id}`
         );
       } else {
         throw new Error("No active session found for this class");
@@ -638,9 +244,9 @@ const FacultyDashboard = () => {
     }
   };
 
+  // ---- Class Delete Handler ----
   const handleDeleteClass = (classItem) => {
     setClassToDelete(classItem);
-    setDeleteConfirmationText("");
     setDeleteClassDialogOpen(true);
   };
 
@@ -650,7 +256,7 @@ const FacultyDashboard = () => {
       setDeletingClass(true);
       await facultyAPI.deleteClass(classToDelete.class_id);
       setClasses((prev) =>
-        prev.filter((cls) => cls.class_id !== classToDelete.class_id),
+        prev.filter((cls) => cls.class_id !== classToDelete.class_id)
       );
       toast({
         title: "Class Deleted",
@@ -670,321 +276,50 @@ const FacultyDashboard = () => {
     }
   };
 
+  // ---- Details & Modal Open Handlers ----
   const handleViewDetails = (classItem) => {
     setSelectedClass(classItem);
     setDetailsOpen(true);
   };
 
-  // ---- Attendance Filter/Export Handlers ----
   const handleFilterExport = (classItem) => {
     setFilterClass(classItem);
-    setFilterMinPct("");
-    setFilterMaxPct("");
-    setFilterStudents([]);
-    setFilterApplied(false);
     setFilterExportOpen(true);
   };
 
-  const handleApplyFilter = async () => {
-    if (!filterClass) return;
-    setFilterLoading(true);
-    try {
-      const params = {};
-      if (filterMinPct !== "") params.min_pct = parseFloat(filterMinPct);
-      if (filterMaxPct !== "") params.max_pct = parseFloat(filterMaxPct);
-      const students = await facultyAPI.getStudentsAttendanceStats(filterClass.class_id, params);
-      setFilterStudents(students);
-      setFilterApplied(true);
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: err?.response?.data?.detail || "Failed to fetch attendance data.",
-        variant: "destructive",
-      });
-    } finally {
-      setFilterLoading(false);
-    }
+  const handleOpenBulkUpload = (classItem) => {
+    setBulkUploadClass(classItem);
+    setBulkUploadOpen(true);
   };
 
-  const handleExportFilterCSV = () => {
-    if (filterStudents.length === 0) {
-      toast({ title: "No Data", description: "No students to export.", variant: "destructive" });
-      return;
-    }
-    const headers = ["Roll Number", "Name", "Email", "Total Sessions", "Present", "Attendance %"];
-    const csvRows = [
-      headers.join(","),
-      ...filterStudents.map((s) =>
-        [
-          `"${s.roll_number || "—"}"`,
-          `"${s.student_name || ""}"`,
-          `"${s.email || "—"}"`,
-          s.total_sessions ?? 0,
-          s.present_count ?? 0,
-          s.attendance_percentage ?? 0,
-        ].join(",")
-      ),
-    ];
-    const csvContent = csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const minLabel = filterMinPct !== "" ? `min${filterMinPct}` : "";
-    const maxLabel = filterMaxPct !== "" ? `max${filterMaxPct}` : "";
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `${filterClass.class_name}_attendance_${minLabel}${maxLabel ? `-${maxLabel}` : ""}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast({ title: "Exported", description: `${filterStudents.length} student(s) exported to CSV.` });
+  const handleViewStudents = (classItem) => {
+    setSelectedStudentsClass(classItem);
+    setStudentsModalOpen(true);
   };
 
-  // ---- Export All Classes Datewise Excel ----
-  const handleExportAllClassesExcel = async () => {
-    if (classes.length === 0) {
-      toast({ title: "No Classes", description: "No classes to export.", variant: "destructive" });
-      return;
-    }
-    setExportAllLoading(true);
-    toast({ title: "Exporting…", description: "Fetching attendance data for all classes. This may take a moment." });
-
-    try {
-      const wb = XLSX.utils.book_new();
-      const usedSheetNames = new Set();
-
-      for (const cls of classes) {
-        let sessionsData;
-        try {
-          sessionsData = await facultyAPI.getAllSessionsWithAttendance(cls.class_id);
-        } catch {
-          continue; // skip classes that fail
-        }
-        const sessions = Array.isArray(sessionsData?.sessions) ? sessionsData.sessions : [];
-        if (sessions.length === 0) continue;
-
-        // Sort sessions chronologically
-        const sorted = [...sessions].sort(
-          (a, b) => new Date(a.start_time) - new Date(b.start_time)
-        );
-
-        // Count sessions per date to decide column labeling
-        const dateCounts = {};
-        sorted.forEach((s) => {
-          if (!s.start_time) return;
-          const d = new Date(s.start_time).toLocaleDateString("en-CA");
-          dateCounts[d] = (dateCounts[d] || 0) + 1;
-        });
-
-        // Build session columns: { key, sessionId }
-        const sessionColumns = [];
-        const dateSessionIndex = {};
-        sorted.forEach((s) => {
-          if (!s.start_time) return;
-          const dt = new Date(s.start_time);
-          const dateStr = dt.toLocaleDateString("en-CA");
-          const timeStr = dt.toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          });
-
-          let colKey;
-          if (dateCounts[dateStr] > 1) {
-            if (!dateSessionIndex[dateStr]) dateSessionIndex[dateStr] = 0;
-            dateSessionIndex[dateStr]++;
-            colKey = `${dateStr} ${timeStr}`;
-          } else {
-            colKey = dateStr;
-          }
-          sessionColumns.push({ key: colKey, sessionId: s.session_id });
-        });
-
-        // Build student map: studentId -> { info, sessionStatus: { sessionId -> P/A } }
-        const studentMap = new Map();
-
-        sorted.forEach((session) => {
-          const recs = Array.isArray(session.records) ? session.records : [];
-          recs.forEach((r) => {
-            const sid = r.student_id;
-            if (!studentMap.has(sid)) {
-              studentMap.set(sid, {
-                roll_number: r.roll_number || "—",
-                student_name: r.student_name || "",
-                email: r.email || "—",
-                section: r.section || "—",
-                sessionStatus: {},
-              });
-            }
-            const student = studentMap.get(sid);
-            const isPresent = r.status === "PRESENT" || r.status === "LATE";
-            student.sessionStatus[session.session_id] = isPresent ? "P" : "A";
-          });
-        });
-
-        // Build rows sorted by section first (e.g. A, B, C...), then by roll number
-        const students = Array.from(studentMap.values()).sort((a, b) => {
-          const secA = (a.section || "—").toUpperCase();
-          const secB = (b.section || "—").toUpperCase();
-          if (secA !== secB) {
-            return secA.localeCompare(secB, undefined, { numeric: true });
-          }
-          return (a.roll_number || "").localeCompare(b.roll_number || "", undefined, { numeric: true });
-        });
-
-        const sheetData = students.map((s) => {
-          const row = {
-            "Roll Number": s.roll_number,
-            "Student Name": s.student_name,
-            "Email": s.email,
-            "Section": s.section,
-          };
-          let totalPresent = 0;
-          sessionColumns.forEach((col) => {
-            const status = s.sessionStatus[col.sessionId] || "A";
-            row[col.key] = status;
-            if (status === "P") totalPresent++;
-          });
-          row["Total Present"] = totalPresent;
-          row["Total Sessions"] = sessionColumns.length;
-          row["Attendance %"] = sessionColumns.length > 0
-            ? ((totalPresent / sessionColumns.length) * 100).toFixed(1) + "%"
-            : "0.0%";
-          return row;
-        });
-
-        if (sheetData.length === 0) continue;
-
-        const ws = XLSX.utils.json_to_sheet(sheetData);
-        // Auto-size columns
-        const colWidths = [
-          { wch: 14 }, // Roll Number
-          { wch: 22 }, // Student Name
-          { wch: 28 }, // Email
-          { wch: 10 }, // Section
-          ...sessionColumns.map(() => ({ wch: 16 })),
-          { wch: 14 }, // Total Present
-          { wch: 14 }, // Total Sessions
-          { wch: 14 }, // Attendance %
-        ];
-        ws["!cols"] = colWidths;
-
-        // Generate unique sheet name (max 31 chars)
-        let baseName = cls.class_name.replace(/[\\/*?:\[\]]/g, "").substring(0, 31);
-        let sheetName = baseName;
-        let counter = 1;
-        while (usedSheetNames.has(sheetName)) {
-          const suffix = `_${counter}`;
-          sheetName = baseName.substring(0, 31 - suffix.length) + suffix;
-          counter++;
-        }
-        usedSheetNames.add(sheetName);
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      }
-
-      if (wb.SheetNames.length === 0) {
-        toast({ title: "No Data", description: "No attendance data found for any class.", variant: "destructive" });
-        return;
-      }
-
-      const today = new Date().toLocaleDateString("en-CA");
-      XLSX.writeFile(wb, `All_Classes_Attendance_${today}.xlsx`);
-      toast({ title: "Success", description: `Exported ${wb.SheetNames.length} class(es) to Excel.` });
-    } catch (err) {
-      console.error("Export error:", err);
-      toast({ title: "Error", description: "Failed to export attendance data.", variant: "destructive" });
-    } finally {
-      setExportAllLoading(false);
-    }
-  };
-
-  // ---- Reset Password Handlers ----
-  const handleOpenResetPassword = async () => {
-    setResetPasswordOpen(true);
-    setSelectedUser(null);
-    setUserSearch("");
-    setNewPassword("");
-    setConfirmPassword("");
-    try {
-      const users = await facultyAPI.listAllUsers();
-      setAllUsers(users || []);
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: "Failed to load users.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSelectUser = (user) => {
-    setSelectedUser(user);
-    setNewPassword("");
-    setConfirmPassword("");
-    setAdminKey("");
-    setShowNewPwd(false);
-    setShowConfirmPwd(false);
-  };
-
-  const handleAdminResetPassword = async () => {
-    if (!selectedUser) return;
-    if (newPassword.length < 6) {
-      toast({ title: "Validation Error", description: "Password must be at least 6 characters.", variant: "destructive" });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast({ title: "Validation Error", description: "Passwords do not match.", variant: "destructive" });
-      return;
-    }
-    if (!adminKey) {
-      toast({ title: "Validation Error", description: "Admin reset key is required.", variant: "destructive" });
-      return;
-    }
-    try {
-      setResettingPassword(true);
-      await facultyAPI.adminResetPassword(selectedUser.user_id, newPassword, adminKey);
-      toast({
-        title: "Password Reset",
-        description: `Password for ${selectedUser.name} has been reset successfully.`,
-      });
-      setSelectedUser(null);
-      setNewPassword("");
-      setConfirmPassword("");
-      setAdminKey("");
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: err?.response?.data?.detail || "Failed to reset password.",
-        variant: "destructive",
-      });
-    } finally {
-      setResettingPassword(false);
-    }
-  };
-
+  // ---- Class Lists Filter Logic ----
   const filteredClasses = classes.filter((cls) =>
-    cls.class_name.toLowerCase().includes(searchTerm.toLowerCase()),
+    cls.class_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const activeClasses = filteredClasses.filter(
     (cls) =>
       mergedSessions[cls.class_id]?.status === "active" &&
-      !endedClassIds.includes(cls.class_id),
+      !endedClassIds.includes(cls.class_id)
   );
+
   const endedClasses = filteredClasses.filter(
     (cls) =>
       mergedSessions[cls.class_id]?.status === "ended" ||
-      endedClassIds.includes(cls.class_id),
+      endedClassIds.includes(cls.class_id)
   );
+
   const scheduledClasses = filteredClasses.filter(
     (cls) =>
       (!mergedSessions[cls.class_id] ||
         (mergedSessions[cls.class_id]?.status !== "active" &&
           mergedSessions[cls.class_id]?.status !== "ended")) &&
-      !endedClassIds.includes(cls.class_id),
+      !endedClassIds.includes(cls.class_id)
   );
 
   return (
@@ -1018,89 +353,24 @@ const FacultyDashboard = () => {
             <Button
               variant="outline"
               className="flex items-center gap-2 w-full sm:w-auto h-10 sm:h-11 text-sm sm:text-base rounded-xl border-orange-500/40 text-orange-600 hover:bg-orange-500/10 hover:text-orange-600 hover:border-orange-500/60 transition-all"
-              onClick={handleOpenResetPassword}
+              onClick={() => setResetPasswordOpen(true)}
             >
               <KeyRound className="h-4 w-4 sm:h-5 sm:w-5" />
               <span>Reset Password</span>
             </Button>
 
-          <Dialog
-            open={isCreateDialogOpen}
-            onOpenChange={setIsCreateDialogOpen}
-          >
-            <DialogTrigger asChild>
-              <Button
-                variant="hero"
-                className="flex items-center gap-2 w-full sm:w-auto h-10 sm:h-11 text-sm sm:text-base rounded-xl shadow-lg hover:shadow-xl transition-all"
-              >
-                <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span>Create Class</span>
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-lg sm:text-xl">
-                  Create New Class
-                </DialogTitle>
-                <DialogDescription className="text-sm">
-                  Add a new class to your dashboard
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="className" className="text-sm font-medium">
-                    Class Name
-                  </Label>
-                  <Input
-                    id="className"
-                    placeholder="e.g., Computer Science 101"
-                    value={newClass.name}
-                    onChange={(e) =>
-                      setNewClass({ ...newClass, name: e.target.value })
-                    }
-                    className="h-11"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="joinCode" className="text-sm font-medium">
-                    Join Code (Optional)
-                  </Label>
-                  <Input
-                    id="joinCode"
-                    placeholder="Leave empty to auto-generate"
-                    value={newClass.joinCode}
-                    onChange={(e) =>
-                      setNewClass({ ...newClass, joinCode: e.target.value })
-                    }
-                    className="h-11"
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsCreateDialogOpen(false)}
-                  className="h-10 sm:h-11"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="default"
-                  onClick={handleCreateClass}
-                  disabled={creatingClass}
-                  className="h-10 sm:h-11"
-                >
-                  {creatingClass ? "Creating..." : "Create Class"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+            <Button
+              variant="hero"
+              onClick={() => setIsCreateDialogOpen(true)}
+              className="flex items-center gap-2 w-full sm:w-auto h-10 sm:h-11 text-sm sm:text-base rounded-xl shadow-lg hover:shadow-xl transition-all"
+            >
+              <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span>Create Class</span>
+            </Button>
           </div>
         </div>
 
-        {/* Search & Filter */}
+        {/* Search & Global Actions */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6 sm:mb-8">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1120,7 +390,7 @@ const FacultyDashboard = () => {
           </Button>
           <Button
             variant="outline"
-            onClick={handleExportAllClassesExcel}
+            onClick={() => exportAllClassesExcel(classes, toast, setExportAllLoading)}
             disabled={exportAllLoading || classes.length === 0}
             className="flex items-center justify-center gap-2 h-10 sm:h-11 w-full sm:w-auto border-dashed hover:border-primary/50 hover:text-primary"
           >
@@ -1175,7 +445,7 @@ const FacultyDashboard = () => {
                   <p className="text-xl sm:text-2xl font-bold">
                     {classes.reduce(
                       (sum, c) => sum + (c.students_count || 0),
-                      0,
+                      0
                     )}
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
@@ -1195,7 +465,7 @@ const FacultyDashboard = () => {
                   <p className="text-xl sm:text-2xl font-bold">
                     {classes.reduce(
                       (sum, c) => sum + (c.sessions_count || 0),
-                      0,
+                      0
                     )}
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
@@ -1207,7 +477,7 @@ const FacultyDashboard = () => {
           </Card>
         </div>
 
-        {/* Active Sessions */}
+        {/* Active Sessions Section */}
         {activeClasses.length > 0 && (
           <div className="mb-6 sm:mb-8">
             <div className="flex items-center gap-2 mb-4">
@@ -1237,7 +507,7 @@ const FacultyDashboard = () => {
           </div>
         )}
 
-        {/* Ended Sessions */}
+        {/* Ended Sessions Section */}
         {endedClasses.length > 0 && (
           <div className="mb-6 sm:mb-8">
             <div className="flex items-center gap-2 mb-4">
@@ -1267,7 +537,7 @@ const FacultyDashboard = () => {
           </div>
         )}
 
-        {/* Your Classes */}
+        {/* Your Classes Section */}
         <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
@@ -1279,10 +549,7 @@ const FacultyDashboard = () => {
                 <ClassCard
                   key={classItem.class_id}
                   classItem={classItem}
-                  status={
-                    mergedSessions[classItem.class_id]?.status ||
-                    getSessionStatus(classItem.class_id)
-                  }
+                  status={null}
                   onViewDetails={handleViewDetails}
                   onDelete={handleDeleteClass}
                   onEndSession={handleEndSession}
@@ -1296,702 +563,95 @@ const FacultyDashboard = () => {
               ))}
             </div>
           ) : (
-            <Card className="border-border/50 bg-card/50 border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="p-4 rounded-full bg-muted/50 mb-4">
-                  <BookOpen className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <p className="text-lg font-medium mb-2">No classes yet</p>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Create your first class to get started
-                </p>
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <div className="text-center py-12 border-2 border-dashed border-border rounded-xl bg-card/30">
+              <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+              <p className="text-muted-foreground font-medium">
+                {searchTerm
+                  ? "No classes match your search."
+                  : "No classes created yet."}
+              </p>
+              {!searchTerm && (
+                <Button
+                  variant="outline"
+                  onClick={() => setIsCreateDialogOpen(true)}
+                  className="mt-4 border-primary/50 text-primary hover:bg-primary/10"
+                >
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Class
+                  Create Your First Class
                 </Button>
-              </CardContent>
-            </Card>
+              )}
+            </div>
           )}
         </div>
-
-        {filteredClasses.length === 0 && searchTerm && (
-          <div className="text-center py-12">
-            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-lg font-medium">No classes found</p>
-            <p className="text-muted-foreground">
-              Your search for "{searchTerm}" did not match any classes.
-            </p>
-          </div>
-        )}
       </div>
 
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-6xl h-[90vh] max-h-[90vh] overflow-hidden p-0">
-          <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2">
-            <DialogTitle className="text-lg sm:text-xl">
-              {selectedClass ? selectedClass.class_name : "Class Details"}
-            </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              View attendance records and session details for this class
-            </DialogDescription>
-          </DialogHeader>
-          <div className="overflow-y-auto h-[calc(90vh-5rem)] px-2 sm:px-4">
-            {selectedClass && <ClassDetails classItem={selectedClass} />}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Class Details Modal */}
+      {selectedClass && (
+        <ClassDetails
+          isOpen={detailsOpen}
+          onClose={() => {
+            setDetailsOpen(false);
+            setSelectedClass(null);
+          }}
+          classItem={selectedClass}
+        />
+      )}
 
-      {/* End Session Confirmation Dialog */}
-      <AlertDialog
+      {/* Create Class Modal */}
+      <CreateClassModal
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onCreated={(createdClass) => {
+          setClasses((prev) => [
+            ...prev,
+            {
+              ...createdClass,
+              students_count: 0,
+              sessions_count: 0,
+              last_session: null,
+            },
+          ]);
+        }}
+      />
+
+      {/* Start Session / Location Capture Modal */}
+      <StartSessionLocationModal
+        open={locationDialogOpen}
+        onOpenChange={setLocationDialogOpen}
+        classToStart={classToStart}
+        onProceed={proceedWithSessionStart}
+        startingSession={startingSession}
+      />
+
+      {/* End Session Confirmation Modal */}
+      <EndSessionConfirmModal
         open={endSessionDialogOpen}
         onOpenChange={setEndSessionDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>End Attendance Session?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to end the attendance session for{" "}
-              <strong>{classToEnd?.class_name}</strong>? This action will:
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>Mark all unmarked students as absent</li>
-                <li>Close the session permanently</li>
-              </ul>
-              You will still be able to view the attendance records, but no
-              further attendance can be marked.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmEndSession}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              End Session
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        classToEnd={classToEnd}
+        onConfirm={confirmEndSession}
+      />
 
-      {/* Delete Class Confirmation Dialog */}
-      <AlertDialog
+      {/* Delete Class Confirmation Modal */}
+      <DeleteClassModal
         open={deleteClassDialogOpen}
-        onOpenChange={(open) => {
-          setDeleteClassDialogOpen(open);
-          if (!open) {
-            setDeleteConfirmationText("");
-          }
-        }}
-      >
-        <AlertDialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive flex items-center gap-2">
-              <Trash2 className="h-5 w-5" />
-              Delete Class?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <span>
-                Are you sure you want to permanently delete <strong>{classToDelete?.class_name}</strong>?
-                This action is <strong className="text-destructive">irreversible</strong> and will permanently delete all related attendance sessions, students' records, and classes' statistics.
-              </span>
-              <div className="pt-2 space-y-1.5">
-                <Label htmlFor="delete-confirm-input" className="text-xs font-semibold text-foreground/80">
-                  Please type <strong className="text-destructive select-all">delete</strong> to confirm:
-                </Label>
-                <Input
-                  id="delete-confirm-input"
-                  placeholder='Type "delete" here'
-                  value={deleteConfirmationText}
-                  onChange={(e) => setDeleteConfirmationText(e.target.value)}
-                  className="h-10 border-destructive/20 focus-visible:ring-destructive/30"
-                  autoComplete="off"
-                />
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingClass}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteClass}
-              disabled={deletingClass || deleteConfirmationText !== "delete"}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deletingClass ? "Deleting..." : "Delete Permanently"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onOpenChange={setDeleteClassDialogOpen}
+        classToDelete={classToDelete}
+        onConfirmDelete={confirmDeleteClass}
+        deletingClass={deletingClass}
+      />
 
-      {/* High Location Accuracy Warning Alert Dialog */}
-      <AlertDialog
-        open={highAccuracyAlertOpen}
-        onOpenChange={setHighAccuracyAlertOpen}
-      >
-        <AlertDialogContent className="w-[calc(100vw-2rem)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" />
-              High Location Uncertainty (±{Math.round(sessionLocation?.accuracy || 0)}m)
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3 pt-2 text-sm text-foreground/90">
-              <span>
-                Your captured location has a high margin of error (<strong>±{Math.round(sessionLocation?.accuracy || 0)}m</strong>), which exceeds the 500m geofencing limit for location verification.
-              </span>
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/50 p-3.5 border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
-                <p className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                  💡 Recommended Action: Code-Only Mode
-                </p>
-                <p>
-                  Please choose <strong>"Start Without Location" (Code-Only Mode)</strong>. Students will only need to enter the unique 6-digit code to mark their attendance — no location capture is required from students!
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2 pt-2">
-            <AlertDialogCancel className="w-full sm:w-auto">Dismiss</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setHighAccuracyAlertOpen(false);
-                proceedWithSessionStart(false);
-              }}
-              className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
-            >
-              Start Without Location (Code-Only)
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Location Capture Dialog */}
-      <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] max-h-[90vh] max-w-lg gap-0 p-0 sm:w-[480px]">
-          <div className="flex h-full max-h-[90vh] flex-col overflow-hidden">
-            <DialogHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pt-6">
-              <DialogTitle>Start Attendance Session</DialogTitle>
-              <DialogDescription>
-                Choose how to track attendance for{" "}
-                <strong>{classToStart?.class_name}</strong>
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex-1 overflow-y-auto px-4 pb-6 pt-2 sm:px-6">
-              <div className="space-y-4 pb-4">
-                {/* GPS Tips Banner */}
-                <div className="flex gap-2.5 rounded-xl border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-3">
-                  <span className="text-lg leading-none shrink-0">📡</span>
-                  <div className="text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                    <p className="font-semibold">For accurate location capture:</p>
-                    <ul className="list-disc list-inside space-y-0.5 text-amber-700 dark:text-amber-400">
-                      <li>Turn <strong>Wi-Fi ON</strong> (no need to connect to any network)</li>
-                      <li>Turn <strong>Battery Saver OFF</strong> for full GPS performance</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <h3 className="font-medium">Location-Based Attendance</h3>
-                <p className="text-sm text-muted-foreground">
-                  Enable location verification to ensure students are physically
-                  present in the classroom.
-                </p>
-
-                <div className="max-h-[360px] overflow-y-auto pr-1 sm:max-h-none">
-                  <LocationCapture
-                    onLocationCaptured={handleLocationCaptured}
-                  />
-                </div>
-
-                {sessionLocation && (
-                  <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="diameter" className="font-semibold text-foreground">
-                        Allowed Classroom Zone (Diameter)
-                      </Label>
-                      <span className="text-xs font-semibold text-blue-600 bg-blue-50 dark:bg-blue-950/50 dark:text-blue-400 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
-                        Radius: {Math.round(getValidDiameter(diameterMeters) / 2)}m
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {[100, 200, 500, 1000].map((d) => (
-                        <Button
-                          key={d}
-                          type="button"
-                          size="sm"
-                          variant={getValidDiameter(diameterMeters) === d ? "default" : "outline"}
-                          onClick={() => setDiameterMeters(d)}
-                          className="min-w-[65px] font-medium"
-                        >
-                          {d}m
-                        </Button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Custom Diameter (Keypad):
-                      </span>
-                      <Input
-                        id="diameter"
-                        type="number"
-                        min="10"
-                        max="10000"
-                        step="10"
-                        value={diameterMeters}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "") {
-                            setDiameterMeters("");
-                          } else {
-                            const parsed = parseInt(val, 10);
-                            if (!isNaN(parsed)) {
-                              setDiameterMeters(Math.min(10000, Math.max(1, parsed)));
-                            }
-                          }
-                        }}
-                        onBlur={() => {
-                          setDiameterMeters(getValidDiameter(diameterMeters));
-                        }}
-                        className="w-28 text-sm font-semibold"
-                        placeholder="e.g. 500"
-                      />
-                      <span className="text-xs font-medium text-muted-foreground">
-                        meters
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground pt-1">
-                      Students must be within the <strong>{getValidDiameter(diameterMeters)}m diameter zone</strong> (up to {Math.round(getValidDiameter(diameterMeters) / 2)}m from your center location).
-                      GPS accuracy (±
-                      {sessionLocation.accuracy
-                        ? Math.round(sessionLocation.accuracy)
-                        : "?"}
-                      m) is automatically accounted for.
-                    </p>
-
-                    {sessionLocation.accuracy > 500 && (
-                      <div className="rounded-xl border border-amber-400/80 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-1.5 text-xs text-amber-900 dark:text-amber-200">
-                        <p className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                          <span>💡 Recommendation: Code-Only Mode</span>
-                        </p>
-                        <p>
-                          GPS accuracy is currently low (±{Math.round(sessionLocation.accuracy)}m). We recommend clicking <strong>"Start Without Location"</strong> below — students can then mark attendance instantly using only the 6-digit code without needing location verification!
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="sticky bottom-0 flex flex-col gap-2 border-t border-border bg-background px-4 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-6">
-              <Button
-                variant={sessionLocation && sessionLocation.accuracy > 500 ? "default" : "outline"}
-                className="w-full sm:w-auto font-medium"
-                onClick={() => proceedWithSessionStart(false)}
-                disabled={startingSession}
-              >
-                Start Without Location (Code-Only)
-              </Button>
-              <Button
-                variant={sessionLocation && sessionLocation.accuracy > 500 ? "outline" : "default"}
-                className="w-full sm:w-auto font-medium"
-                onClick={() => proceedWithSessionStart(true)}
-                disabled={!sessionLocation || sessionLocation.accuracy > 500 || startingSession}
-              >
-                {startingSession ? "Starting..." : "Start with Location"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <p className="text-center text-xs text-muted-foreground py-6">
-        &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
-      </p>
-
-      {/* Reset Password Dialog */}
-      <Dialog
-        open={resetPasswordOpen}
-        onOpenChange={(open) => {
-          setResetPasswordOpen(open);
-          if (!open) { setSelectedUser(null); setUserSearch(""); }
-        }}
-      >
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-hidden p-0">
-          <div className="flex flex-col h-full max-h-[90vh]">
-            <DialogHeader className="px-5 pt-5 pb-3 border-b border-border/50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-orange-500/10">
-                  <KeyRound className="h-5 w-5 text-orange-500" />
-                </div>
-                <div>
-                  <DialogTitle className="text-lg">Reset User Password</DialogTitle>
-                  <DialogDescription className="text-xs mt-0.5">
-                    Search for a student or faculty and set a new password.
-                  </DialogDescription>
-                </div>
-              </div>
-            </DialogHeader>
-
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {/* Search */}
-              {!selectedUser && (
-                <>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search by name or email…"
-                      value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
-                      className="pl-9 h-10"
-                    />
-                  </div>
-
-                  {/* User List */}
-                  <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
-                    {allUsers
-                      .filter((u) =>
-                        u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-                        u.email.toLowerCase().includes(userSearch.toLowerCase())
-                      )
-                      .map((u) => (
-                        <button
-                          key={u.user_id}
-                          onClick={() => handleSelectUser(u)}
-                          className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-border/40 bg-card/60 hover:bg-muted/60 hover:border-primary/40 transition-all text-left group"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{u.name}</p>
-                            <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className={`shrink-0 text-[10px] font-semibold ${
-                              u.role === "FACULTY"
-                                ? "border-blue-500/50 text-blue-500 bg-blue-500/10"
-                                : "border-green-500/50 text-green-600 bg-green-500/10"
-                            }`}
-                          >
-                            {u.role === "FACULTY" ? "Faculty" : "Student"}
-                          </Badge>
-                        </button>
-                      ))}
-                    {allUsers.filter((u) =>
-                      u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-                      u.email.toLowerCase().includes(userSearch.toLowerCase())
-                    ).length === 0 && (
-                      <p className="text-center text-sm text-muted-foreground py-6">No users found.</p>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* Password Form — shown after selecting a user */}
-              {selectedUser && (
-                <div className="space-y-4">
-                  {/* Selected user banner */}
-                  <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-orange-500/30 bg-orange-500/5">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm truncate">{selectedUser.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{selectedUser.email}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] font-semibold ${
-                          selectedUser.role === "FACULTY"
-                            ? "border-blue-500/50 text-blue-500 bg-blue-500/10"
-                            : "border-green-500/50 text-green-600 bg-green-500/10"
-                        }`}
-                      >
-                        {selectedUser.role === "FACULTY" ? "Faculty" : "Student"}
-                      </Badge>
-                      <button
-                        onClick={() => setSelectedUser(null)}
-                        className="text-xs text-muted-foreground hover:text-foreground underline"
-                      >
-                        Change
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* New Password */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reset-new-pwd" className="text-sm font-medium">New Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="reset-new-pwd"
-                        type={showNewPwd ? "text" : "password"}
-                        placeholder="Min. 6 characters"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="h-10 pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPwd((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showNewPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Confirm Password */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reset-confirm-pwd" className="text-sm font-medium">Confirm Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="reset-confirm-pwd"
-                        type={showConfirmPwd ? "text" : "password"}
-                        placeholder="Re-enter password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className={`h-10 pr-10 ${
-                          confirmPassword && confirmPassword !== newPassword
-                            ? "border-destructive focus-visible:ring-destructive"
-                            : confirmPassword && confirmPassword === newPassword
-                              ? "border-green-500 focus-visible:ring-green-500"
-                              : ""
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPwd((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showConfirmPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    {confirmPassword && confirmPassword !== newPassword && (
-                      <p className="text-xs text-destructive">Passwords do not match.</p>
-                    )}
-                    {confirmPassword && confirmPassword === newPassword && (
-                      <p className="text-xs text-green-600 flex items-center gap-1">
-                        <CheckCircle className="h-3 w-3" /> Passwords match
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Admin Reset Key */}
-                  <div className="space-y-1.5 pt-2 border-t border-border/40">
-                    <Label htmlFor="admin-key" className="text-sm font-medium text-orange-600">Admin Reset Key</Label>
-                    <Input
-                      id="admin-key"
-                      type="password"
-                      placeholder="Enter secret authorization key. To get password contact developer "
-                      value={adminKey}
-                      onChange={(e) => setAdminKey(e.target.value)}
-                      className="h-10 border-orange-500/30 focus-visible:ring-orange-500/50"
-                    />
-                    <p className="text-[10px] text-muted-foreground">Required to authorize this password reset.</p>
-                  </div>
-
-                  <Button
-                    className="w-full h-10 bg-orange-500 hover:bg-orange-600 text-white mt-4"
-                    onClick={handleAdminResetPassword}
-                    disabled={resettingPassword || !newPassword || !confirmPassword || !adminKey}
-                  >
-                    <KeyRound className="h-4 w-4 mr-2" />
-                    {resettingPassword ? "Resetting…" : "Reset Password"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Attendance Filter & Export Dialog ── */}
-      <Dialog
+      {/* Attendance Filter & Export Modal */}
+      <AttendanceFilterExportModal
         open={filterExportOpen}
-        onOpenChange={(open) => {
-          setFilterExportOpen(open);
-          if (!open) setFilterStudents([]);
-        }}
-      >
-        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
-              <BarChart2 className="h-5 w-5 text-primary" />
-              Attendance Filter &amp; Export
-              {filterClass && (
-                <span className="text-muted-foreground font-normal text-sm ml-1">
-                  — {filterClass.class_name}
-                </span>
-              )}
-            </DialogTitle>
-            <DialogDescription className="text-sm">
-              Filter students by attendance percentage, preview the results, and
-              export to CSV.
-            </DialogDescription>
-          </DialogHeader>
+        onOpenChange={setFilterExportOpen}
+        classItem={filterClass}
+      />
 
-
-          {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="filter-min-pct" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Min Attendance %
-              </Label>
-              <Input
-                id="filter-min-pct"
-                type="number"
-                min="0"
-                max="100"
-                placeholder="e.g. 0"
-                value={filterMinPct}
-                onChange={(e) => setFilterMinPct(e.target.value)}
-                className="h-9 text-sm"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="filter-max-pct" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Max Attendance %
-              </Label>
-              <Input
-                id="filter-max-pct"
-                type="number"
-                min="0"
-                max="100"
-                placeholder="e.g. 75"
-                value={filterMaxPct}
-                onChange={(e) => setFilterMaxPct(e.target.value)}
-                className="h-9 text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Quick preset chips */}
-          <div className="flex flex-wrap gap-2 pb-3 border-b border-border/40">
-            <span className="text-xs text-muted-foreground self-center">Quick filters:</span>
-            {[
-              { label: "Below 75%", min: "", max: "74.99" },
-              { label: "Below 50%", min: "", max: "49.99" },
-              { label: "Above 75%", min: "75", max: "" },
-              { label: "Above 90%", min: "90", max: "" },
-              { label: "All", min: "", max: "" },
-            ].map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => {
-                  setFilterMinPct(preset.min);
-                  setFilterMaxPct(preset.max);
-                }}
-                className="px-2.5 py-1 rounded-full text-xs border border-border hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Apply button */}
-          <div className="flex justify-end pt-1 pb-2">
-            <Button
-              size="sm"
-              onClick={handleApplyFilter}
-              disabled={filterLoading}
-              className="gap-2 h-9"
-            >
-              <Filter className="h-3.5 w-3.5" />
-              {filterLoading ? "Loading…" : "Apply Filter"}
-            </Button>
-          </div>
-
-          {/* Results */}
-          {filterApplied && (
-            <div className="space-y-3">
-              {/* Summary bar */}
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">
-                    {filterStudents.length} student{filterStudents.length !== 1 ? "s" : ""}
-                  </Badge>
-                  {filterStudents.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      Avg:{" "}
-                      <strong className="text-foreground">
-                        {(
-                          filterStudents.reduce(
-                            (sum, s) => sum + parseFloat(s.attendance_percentage || 0),
-                            0
-                          ) / filterStudents.length
-                        ).toFixed(1)}
-                        %
-                      </strong>
-                    </span>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleExportFilterCSV}
-                  disabled={filterStudents.length === 0}
-                  className="gap-1.5 h-8 text-xs border-dashed hover:border-primary/50 hover:text-primary"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export CSV
-                </Button>
-              </div>
-
-              {filterStudents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 border rounded-lg bg-muted/10 text-center">
-                  <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm font-medium">No students match the filter</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Try adjusting the percentage range.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-lg border border-border/50">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="whitespace-nowrap text-xs py-2">Roll No.</TableHead>
-                        <TableHead className="whitespace-nowrap text-xs py-2">Name</TableHead>
-                        <TableHead className="whitespace-nowrap text-xs py-2 text-center">Sessions</TableHead>
-                        <TableHead className="whitespace-nowrap text-xs py-2 text-center">Present</TableHead>
-                        <TableHead className="whitespace-nowrap text-xs py-2 text-center">Attendance %</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filterStudents.map((s) => {
-                        const pct = parseFloat(s.attendance_percentage || 0);
-                        const pctColor =
-                          pct >= 75
-                            ? "text-green-600 dark:text-green-400"
-                            : pct >= 50
-                            ? "text-yellow-600 dark:text-yellow-400"
-                            : "text-red-600 dark:text-red-400";
-                        return (
-                          <TableRow key={s.student_id} className="hover:bg-muted/20">
-                            <TableCell className="text-xs py-2 font-mono">
-                              {s.roll_number || "—"}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 font-medium">
-                              {s.student_name}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 text-center text-muted-foreground">
-                              {s.total_sessions ?? 0}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 text-center text-muted-foreground">
-                              {s.present_count ?? 0}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 text-center">
-                              <span className={`font-bold ${pctColor}`}>
-                                {pct.toFixed(1)}%
-                              </span>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Admin Reset Password Modal */}
+      <ResetPasswordModal
+        open={resetPasswordOpen}
+        onOpenChange={setResetPasswordOpen}
+      />
 
       {/* Bulk Student Upload Modal */}
       {bulkUploadClass && (
@@ -2004,7 +664,7 @@ const FacultyDashboard = () => {
           classId={bulkUploadClass.class_id}
           className={bulkUploadClass.class_name}
           onSuccess={() => {
-            fetchClasses();
+            loadClasses();
           }}
         />
       )}
@@ -2022,6 +682,9 @@ const FacultyDashboard = () => {
         />
       )}
 
+      <p className="text-center text-xs text-muted-foreground py-6">
+        &copy; 2026 Achyut Shekhar Singh. All Rights Reserved.
+      </p>
     </div>
   );
 };

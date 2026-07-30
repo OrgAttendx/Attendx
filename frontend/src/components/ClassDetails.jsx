@@ -46,7 +46,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const ClassDetails = ({ classItem }) => {
+const ClassDetails = ({ isOpen, onClose, classItem }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -301,115 +301,47 @@ const ClassDetails = ({ classItem }) => {
   /* ---------------------------------------------------
      EXPORT FUNCTIONS
   --------------------------------------------------- */
-  const formatRowsForExport = (exportRowsList, sessionDate, sessionTime) => {
-    const sections = {};
-    exportRowsList.forEach((r) => {
-      const sec = r.section || "Unassigned";
-      if (!sections[sec]) sections[sec] = [];
-      sections[sec].push(r);
-    });
-
-    const exportRows = [];
-    exportRows.push({ "Student Name": `Class: ${classItem.class_name}` });
-    exportRows.push({ "Student Name": `Date: ${sessionDate}` });
-    exportRows.push({ "Student Name": `Time: ${sessionTime}` });
-    exportRows.push({});
-
-    const colHeaders = {
-      "Roll Number": "Roll Number",
-      "Student Name": "Student Name",
-      Section: "Section",
-      Status: "Status",
-      "Marked At": "Marked At",
-    };
-
-    Object.keys(sections)
-      .sort()
-      .forEach((sec) => {
-        const students = sections[sec];
-        const presentList = students
-          .filter((s) => s.status === "PRESENT" || s.status === "LATE")
-          .sort((a, b) => (a.student_name || "").localeCompare(b.student_name || ""));
-        const absentList = students
-          .filter((s) => s.status === "ABSENT" || !s.status)
-          .sort((a, b) => (a.student_name || "").localeCompare(b.student_name || ""));
-
-        exportRows.push({ "Student Name": `SECTION: ${sec}` });
-
-        if (presentList.length > 0) {
-          exportRows.push({ "Student Name": `--- PRESENT (${presentList.length}) ---` });
-          exportRows.push(colHeaders);
-          presentList.forEach((r) => {
-            exportRows.push({
-              "Roll Number": r.roll_number || "—",
-              Section: r.section || "—",
-              "Student Name": r.student_name,
-              Status: "PRESENT",
-              "Marked At": r.marked_at
-                ? new Date(r.marked_at + "Z").toLocaleString("en-IN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })
-                : "—",
-            });
-          });
-          exportRows.push({});
-        }
-
-        if (absentList.length > 0) {
-          exportRows.push({ "Student Name": `--- ABSENT (${absentList.length}) ---` });
-          exportRows.push(colHeaders);
-          absentList.forEach((r) => {
-            exportRows.push({
-              "Roll Number": r.roll_number || "—",
-              Section: r.section || "—",
-              "Student Name": r.student_name,
-              Status: "ABSENT",
-              "Marked At": "—",
-            });
-          });
-          exportRows.push({});
-        }
-
-        exportRows.push({ "Student Name": `Total Present: ${presentList.length}` });
-        exportRows.push({ "Student Name": `Total Absent: ${absentList.length}` });
-        exportRows.push({ "Student Name": `Total Strength: ${presentList.length + absentList.length}` });
-        exportRows.push({});
-        exportRows.push({});
-      });
-
-    return exportRows;
-  };
-
   const exportCurrentSession = () => {
-    if (rows.length === 0) {
+    const currentSessionObj = rawSessions.find(
+      (s) => Number(s.session_id) === Number(selectedSession)
+    );
+
+    if (!currentSessionObj) {
       toast({
         title: "No Data",
-        description: "No attendance data to export.",
+        description: "No attendance data found for current session.",
         variant: "destructive",
       });
       return;
     }
 
-    const sessionInfo = sessions.find((s) => s.session_id === selectedSession);
-    const sessionTime = sessionInfo
-      ? new Date(sessionInfo.start_time).toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })
-      : "Unknown Time";
-
-    const exportData = formatRowsForExport(rows, selectedDate, sessionTime);
-    const ws = XLSX.utils.json_to_sheet(exportData, { skipHeader: true });
-    ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 15 }, { wch: 20 }];
+    const ws = buildDatewisePivotSheet([currentSessionObj]);
+    if (!ws) {
+      toast({
+        title: "No Data",
+        description: "No student records found for this session.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+    const sheetName = classItem.class_name
+      .replace(/[\\/*?:\[\]]/g, "")
+      .substring(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-    const timeStr = sessionTime.replace(/:/g, "-");
-    const filename = `${classItem.class_name}_${selectedDate}_${timeStr}.xlsx`;
+    const sTime = currentSessionObj.start_time
+      ? new Date(currentSessionObj.start_time)
+          .toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+          .replace(/:/g, "-")
+      : "Session";
+
+    const filename = `${classItem.class_name}_${selectedDate}_Session${currentSessionObj.session_id}_${sTime}.xlsx`;
     XLSX.writeFile(wb, filename);
 
     toast({
@@ -431,36 +363,34 @@ const ClassDetails = ({ classItem }) => {
     try {
       setExportLoading(true);
       setExportProgress(`Exporting ${sessions.length} session(s)...`);
-      const wb = XLSX.utils.book_new();
 
-      for (let i = 0; i < sessions.length; i++) {
-        const session = sessions[i];
-        const recs = Array.isArray(session.records) ? session.records : [];
-        const sTime = new Date(session.start_time).toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
+      const ws = buildDatewisePivotSheet(sessions);
+      if (!ws) {
+        toast({
+          title: "No Data",
+          description: "No student records found for this date.",
+          variant: "destructive",
         });
-
-        const exportData = formatRowsForExport(recs, selectedDate, sTime);
-        const ws = XLSX.utils.json_to_sheet(exportData, { skipHeader: true });
-        ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 15 }, { wch: 20 }];
-
-        const sheetName = `Session_${i + 1}`;
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        return;
       }
 
-      const filename = `${classItem.class_name}_${selectedDate}_AllSessions.xlsx`;
+      const wb = XLSX.utils.book_new();
+      const sheetName = classItem.class_name
+        .replace(/[\\/*?:\[\]]/g, "")
+        .substring(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      const filename = `${classItem.class_name}_${selectedDate}.xlsx`;
       XLSX.writeFile(wb, filename);
 
       toast({
         title: "Success",
-        description: `Exported ${sessions.length} session(s) successfully.`,
+        description: `Exported ${sessions.length} session(s) for ${selectedDate}.`,
       });
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to export sessions.",
+        description: "Failed to export current date sessions.",
         variant: "destructive",
       });
     } finally {
@@ -699,18 +629,35 @@ const ClassDetails = ({ classItem }) => {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-muted-foreground">
-        <Loader className="h-7 w-7 animate-spin text-primary" />
-        <span className="text-sm font-medium">Loading class attendance data...</span>
-      </div>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose?.()}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">
+              {classItem?.class_name || "Class"} — Loading...
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center min-h-[200px] gap-3 text-muted-foreground">
+            <Loader className="h-7 w-7 animate-spin text-primary" />
+            <span className="text-sm font-medium">Loading class attendance data...</span>
+          </div>
+        </DialogContent>
+      </Dialog>
     );
   }
 
   return (
-    <div className="px-2 sm:px-3 pb-4">
-      <h2 className="text-base sm:text-lg md:text-xl font-bold mb-3 sm:mb-4">
-        {classItem.class_name} Attendance
-      </h2>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose?.()}>
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-6xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden bg-background border-border shadow-2xl rounded-2xl">
+        <DialogHeader className="p-5 sm:p-6 pb-4 border-b bg-muted/40 relative pr-12">
+          <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight">
+            {classItem?.class_name} — Attendance Details
+          </DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+            Code: <strong className="text-primary font-mono">{classItem?.join_code}</strong> | View datewise attendance records, manage sessions, and export statistics.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Session Dates List */}
@@ -1238,6 +1185,9 @@ const ClassDetails = ({ classItem }) => {
         </DialogContent>
       </Dialog>
 
+        </div>
+      </DialogContent>
+
       {/* Bulk Upload Modal */}
       <BulkStudentUploadModal
         isOpen={showBulkUploadModal}
@@ -1248,7 +1198,7 @@ const ClassDetails = ({ classItem }) => {
           queryClient.invalidateQueries({ queryKey: ["class-sessions", classItem?.class_id] });
         }}
       />
-    </div>
+    </Dialog>
   );
 };
 
