@@ -175,7 +175,11 @@ export const BulkStudentUploadModal = ({
       });
 
       if (onSuccess) {
-        onSuccess();
+        try {
+          onSuccess();
+        } catch (cbErr) {
+          console.error("Error in onSuccess callback:", cbErr);
+        }
       }
     } catch (err) {
       console.error("Bulk upload error:", err);
