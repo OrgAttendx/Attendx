@@ -5,7 +5,7 @@ from src.core.database import engine
 from src.core.security import verify_password, get_password_hash, create_access_token, create_reset_token, create_reset_token_expiry, verify_token
 from src.core.email import send_password_reset_email
 from src.core.config import FACULTY_REGISTER_KEY
-from src.models.schemas import LoginRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest, DeleteAccountRequest
+from src.models.schemas import LoginRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest, DeleteAccountRequest, ChangeFirstPasswordRequest
 from src.core.logging_config import get_logger
 
 logger = get_logger("auth")
@@ -23,7 +23,7 @@ async def login(request: LoginRequest):
         
         async with engine.connect() as conn:
             q = text(
-                "SELECT user_id, name, email, password_hash, role FROM users WHERE email = :email"
+                "SELECT user_id, name, email, password_hash, role, COALESCE(must_change_password, FALSE) AS must_change_password FROM users WHERE email = :email"
             )
             result = await conn.execute(q, {"email": request.email})
             row = result.fetchone()
@@ -61,6 +61,7 @@ async def login(request: LoginRequest):
                 "name": user["name"],
                 "email": user["email"],
                 "role": user["role"],
+                "must_change_password": bool(user.get("must_change_password", False)),
             }
     except HTTPException:
         raise
@@ -393,5 +394,43 @@ async def delete_account(request: DeleteAccountRequest):
     except Exception as e:
         logger.exception(f"❌ [AUTH/DELETE_ACCOUNT] Error deleting account user_id={request.user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+
+
+@router.post("/api/auth/change-first-password")
+@router.post("/change-first-password")
+async def change_first_password(
+    request: ChangeFirstPasswordRequest,
+    current_user: dict = Depends(verify_token)
+):
+    """Update user's password on first login and set must_change_password to FALSE"""
+    user_id = current_user["user_id"]
+    logger.info(f"🔑 [AUTH/CHANGE_FIRST_PASSWORD] Updating password for user_id={user_id}")
+    
+    if not request.new_password or len(request.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+    
+    # Truncate password to 72 bytes (bcrypt limit)
+    new_password = request.new_password
+    if len(new_password.encode('utf-8')) > 72:
+        new_password = new_password[:72]
+        
+    hashed_pwd = get_password_hash(new_password)
+    
+    try:
+        async with engine.begin() as conn:
+            q = text(
+                """
+                UPDATE users 
+                SET password_hash = :hash, must_change_password = FALSE 
+                WHERE user_id = :user_id
+                """
+            )
+            await conn.execute(q, {"hash": hashed_pwd, "user_id": user_id})
+            logger.info(f"✅ [AUTH/CHANGE_FIRST_PASSWORD] Password changed successfully for user_id={user_id}")
+            return {"message": "Password updated successfully", "success": True}
+    except Exception as e:
+        logger.exception(f"❌ [AUTH/CHANGE_FIRST_PASSWORD] Error updating password for user_id={user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update password: {str(e)}")
+
 
 

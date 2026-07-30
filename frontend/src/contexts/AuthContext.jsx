@@ -54,6 +54,7 @@ export const AuthProvider = ({ children }) => {
         name: data.name,
         email: data.email,
         role: data.role,
+        must_change_password: data.must_change_password || false,
       };
 
       // ✅ Save token and user info locally
@@ -81,6 +82,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ✅ Helper to clear must_change_password after user updates password
+  const updateMustChangePassword = (val = false) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, must_change_password: val };
+      localStorage.setItem("user", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // ✅ Logout clears data
   const logout = () => {
     localStorage.removeItem("user");
@@ -100,6 +111,7 @@ export const AuthProvider = ({ children }) => {
     isLoading,
     login,
     logout,
+    updateMustChangePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

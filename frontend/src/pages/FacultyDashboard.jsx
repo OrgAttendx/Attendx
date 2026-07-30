@@ -21,6 +21,9 @@ import {
   Download,
   X,
   BarChart2,
+  FileSpreadsheet,
+  UserPlus,
+  MoreVertical,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import Header from "@/components/layout/Header";
@@ -32,6 +35,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -66,6 +75,8 @@ import { useAttendance } from "@/contexts/AttendanceContext";
 import { Badge } from "@/components/ui/badge";
 import ClassDetails from "@/components/ClassDetails";
 import LocationCapture from "@/components/attendance/LocationCapture";
+import BulkStudentUploadModal from "@/components/BulkStudentUploadModal";
+import ClassStudentsModal from "@/components/ClassStudentsModal";
 
 const ClassCard = ({
   classItem,
@@ -76,6 +87,8 @@ const ClassCard = ({
   onStartSession,
   onGoToAttendance,
   onFilterExport,
+  onBulkUpload,
+  onViewStudents,
   startingSession,
 }) => {
   return (
@@ -127,29 +140,63 @@ const ClassCard = ({
                 )}
               </Badge>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onDelete(classItem)}
-              title="Delete Class"
-              className="h-8 w-8 opacity-50 hover:opacity-100 hover:bg-destructive/10"
-            >
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
+
+            {/* Three Dots Options Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  title="Class options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem
+                  onClick={() => onBulkUpload(classItem)}
+                  className="cursor-pointer gap-2 font-medium"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Bulk Upload Students</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => onFilterExport(classItem)}
+                  className="cursor-pointer gap-2 font-medium"
+                >
+                  <SlidersHorizontal className="h-4 w-4 text-primary" />
+                  <span>Attendance Filter & Export</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => onDelete(classItem)}
+                  className="cursor-pointer gap-2 font-medium text-destructive focus:text-destructive focus:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Delete Class</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </CardHeader>
       <CardContent className="relative space-y-4 pt-0">
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 p-2.5 sm:p-3 rounded-xl bg-muted/50">
-            <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10">
+          <div
+            onClick={() => onViewStudents?.(classItem)}
+            className="flex items-center gap-2 p-2.5 sm:p-3 rounded-xl bg-muted/50 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 cursor-pointer transition-all duration-200 border border-transparent hover:border-blue-500/30 group/students"
+            title="Click to view student details"
+          >
+            <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10 group-hover/students:bg-blue-500/20 transition-colors">
               <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-500" />
             </div>
             <div>
-              <p className="text-lg sm:text-xl font-bold">
+              <p className="text-lg sm:text-xl font-bold group-hover/students:text-blue-600 dark:group-hover/students:text-blue-400 transition-colors">
                 {classItem.students_count || 0}
               </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">
+              <p className="text-[10px] sm:text-xs text-muted-foreground group-hover/students:text-blue-600 dark:group-hover/students:text-blue-400 font-medium transition-colors">
                 Students
               </p>
             </div>
@@ -177,11 +224,12 @@ const ClassCard = ({
         )}
 
         <div className="flex flex-col gap-2 pt-1">
+          {/* Main Action Button */}
           <Button
             variant={status === "active" ? "default" : "outline"}
             size="sm"
-            className={`w-full h-9 sm:h-10 text-xs sm:text-sm ${
-              status === "active" ? "shadow-lg" : ""
+            className={`w-full h-9 sm:h-10 text-xs sm:text-sm font-semibold ${
+              status === "active" ? "shadow-lg bg-green-600 hover:bg-green-700 text-white" : ""
             }`}
             disabled={startingSession}
             onClick={() => {
@@ -192,7 +240,7 @@ const ClassCard = ({
               }
             }}
           >
-            <Play className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+            <Play className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5" />
             {startingSession
               ? "Starting..."
               : status === "active"
@@ -201,35 +249,30 @@ const ClassCard = ({
                   ? "Start New Session"
                   : "Start Session"}
           </Button>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 h-9 sm:h-10 text-xs sm:text-sm"
-              onClick={() => onViewDetails(classItem)}
-            >
-              View Details
-            </Button>
-            {status === "active" && (
-              <Button
-                variant="destructive"
-                size="sm"
-                className="flex-1 h-9 sm:h-10 text-xs sm:text-sm"
-                onClick={() => onEndSession(classItem)}
-              >
-                End Session
-              </Button>
-            )}
-          </div>
+
+          {/* View Details Button */}
           <Button
             variant="outline"
             size="sm"
-            className="w-full h-9 sm:h-10 text-xs sm:text-sm flex items-center justify-center gap-1.5 border-dashed hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-colors"
-            onClick={() => onFilterExport(classItem)}
+            className="w-full h-9 sm:h-10 text-xs sm:text-sm flex items-center justify-center gap-1.5 font-medium hover:border-primary/50"
+            onClick={() => onViewDetails(classItem)}
           >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Attendance Filter & Export
+            <Eye className="h-3.5 w-3.5" />
+            <span>View Details</span>
           </Button>
+
+          {/* End Active Session Button */}
+          {status === "active" && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="w-full h-8 text-xs font-semibold gap-1.5"
+              onClick={() => onEndSession(classItem)}
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>End Active Session</span>
+            </Button>
+          )}
         </div>
         {status === "ended" && (
           <div className="text-center text-green-600 font-semibold text-sm mt-2">
@@ -280,6 +323,24 @@ const FacultyDashboard = () => {
 
   // Export All Classes Excel state
   const [exportAllLoading, setExportAllLoading] = useState(false);
+
+  // Bulk Upload states
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  const [bulkUploadClass, setBulkUploadClass] = useState(null);
+
+  const handleOpenBulkUpload = (classItem) => {
+    setBulkUploadClass(classItem);
+    setBulkUploadOpen(true);
+  };
+
+  // Student Details Modal states
+  const [studentsModalOpen, setStudentsModalOpen] = useState(false);
+  const [selectedStudentsClass, setSelectedStudentsClass] = useState(null);
+
+  const handleViewStudents = (classItem) => {
+    setSelectedStudentsClass(classItem);
+    setStudentsModalOpen(true);
+  };
 
   // Reset Password states
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
@@ -1167,6 +1228,8 @@ const FacultyDashboard = () => {
                   onStartSession={handleStartSession}
                   onGoToAttendance={handleGoToAttendance}
                   onFilterExport={handleFilterExport}
+                  onBulkUpload={handleOpenBulkUpload}
+                  onViewStudents={handleViewStudents}
                   startingSession={startingSession}
                 />
               ))}
@@ -1195,6 +1258,8 @@ const FacultyDashboard = () => {
                   onStartSession={handleStartSession}
                   onGoToAttendance={handleGoToAttendance}
                   onFilterExport={handleFilterExport}
+                  onBulkUpload={handleOpenBulkUpload}
+                  onViewStudents={handleViewStudents}
                   startingSession={startingSession}
                 />
               ))}
@@ -1224,6 +1289,8 @@ const FacultyDashboard = () => {
                   onStartSession={handleStartSession}
                   onGoToAttendance={handleGoToAttendance}
                   onFilterExport={handleFilterExport}
+                  onBulkUpload={handleOpenBulkUpload}
+                  onViewStudents={handleViewStudents}
                   startingSession={startingSession}
                 />
               ))}
@@ -1926,8 +1993,36 @@ const FacultyDashboard = () => {
         </DialogContent>
       </Dialog>
 
-    </div>
+      {/* Bulk Student Upload Modal */}
+      {bulkUploadClass && (
+        <BulkStudentUploadModal
+          isOpen={bulkUploadOpen}
+          onClose={() => {
+            setBulkUploadOpen(false);
+            setBulkUploadClass(null);
+          }}
+          classId={bulkUploadClass.class_id}
+          className={bulkUploadClass.class_name}
+          onSuccess={() => {
+            fetchClasses();
+          }}
+        />
+      )}
 
+      {/* Student Details Modal */}
+      {selectedStudentsClass && (
+        <ClassStudentsModal
+          open={studentsModalOpen}
+          onOpenChange={(open) => {
+            setStudentsModalOpen(open);
+            if (!open) setSelectedStudentsClass(null);
+          }}
+          classItem={selectedStudentsClass}
+          onBulkUpload={handleOpenBulkUpload}
+        />
+      )}
+
+    </div>
   );
 };
 
