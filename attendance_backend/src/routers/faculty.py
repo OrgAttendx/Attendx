@@ -647,21 +647,19 @@ async def get_students_attendance_stats(
                 u.email,
                 ce.roll_number,
                 ce.section,
-                COUNT(s.session_id) AS total_sessions,
+                (SELECT COUNT(*) FROM attendance_sessions WHERE class_id = :class_id) AS total_sessions,
                 COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END) AS present_count,
                 CASE
-                    WHEN COUNT(s.session_id) = 0 THEN 0.0
+                    WHEN (SELECT COUNT(*) FROM attendance_sessions WHERE class_id = :class_id) = 0 THEN 0.0
                     ELSE ROUND(
                         COUNT(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 END) * 100.0
-                        / COUNT(s.session_id),
+                        / (SELECT COUNT(*) FROM attendance_sessions WHERE class_id = :class_id),
                         2
                     )
                 END AS attendance_percentage
             FROM class_enrollments ce
             JOIN users u ON ce.student_id = u.user_id
-            CROSS JOIN (
-                SELECT session_id FROM attendance_sessions WHERE class_id = :class_id
-            ) s
+            LEFT JOIN attendance_sessions s ON s.class_id = ce.class_id
             LEFT JOIN attendance_records ar
                 ON ar.session_id = s.session_id AND ar.student_id = ce.student_id
             WHERE ce.class_id = :class_id

@@ -76,6 +76,7 @@ import { Badge } from "@/components/ui/badge";
 import ClassDetails from "@/components/ClassDetails";
 import LocationCapture from "@/components/attendance/LocationCapture";
 import BulkStudentUploadModal from "@/components/BulkStudentUploadModal";
+import ClassStudentsModal from "@/components/ClassStudentsModal";
 
 const ClassCard = ({
   classItem,
@@ -87,6 +88,7 @@ const ClassCard = ({
   onGoToAttendance,
   onFilterExport,
   onBulkUpload,
+  onViewStudents,
   startingSession,
 }) => {
   return (
@@ -182,15 +184,19 @@ const ClassCard = ({
       </CardHeader>
       <CardContent className="relative space-y-4 pt-0">
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 p-2.5 sm:p-3 rounded-xl bg-muted/50">
-            <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10">
+          <div
+            onClick={() => onViewStudents?.(classItem)}
+            className="flex items-center gap-2 p-2.5 sm:p-3 rounded-xl bg-muted/50 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 cursor-pointer transition-all duration-200 border border-transparent hover:border-blue-500/30 group/students"
+            title="Click to view student details"
+          >
+            <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10 group-hover/students:bg-blue-500/20 transition-colors">
               <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-500" />
             </div>
             <div>
-              <p className="text-lg sm:text-xl font-bold">
+              <p className="text-lg sm:text-xl font-bold group-hover/students:text-blue-600 dark:group-hover/students:text-blue-400 transition-colors">
                 {classItem.students_count || 0}
               </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">
+              <p className="text-[10px] sm:text-xs text-muted-foreground group-hover/students:text-blue-600 dark:group-hover/students:text-blue-400 font-medium transition-colors">
                 Students
               </p>
             </div>
@@ -325,6 +331,15 @@ const FacultyDashboard = () => {
   const handleOpenBulkUpload = (classItem) => {
     setBulkUploadClass(classItem);
     setBulkUploadOpen(true);
+  };
+
+  // Student Details Modal states
+  const [studentsModalOpen, setStudentsModalOpen] = useState(false);
+  const [selectedStudentsClass, setSelectedStudentsClass] = useState(null);
+
+  const handleViewStudents = (classItem) => {
+    setSelectedStudentsClass(classItem);
+    setStudentsModalOpen(true);
   };
 
   // Reset Password states
@@ -1214,6 +1229,7 @@ const FacultyDashboard = () => {
                   onGoToAttendance={handleGoToAttendance}
                   onFilterExport={handleFilterExport}
                   onBulkUpload={handleOpenBulkUpload}
+                  onViewStudents={handleViewStudents}
                   startingSession={startingSession}
                 />
               ))}
@@ -1243,6 +1259,7 @@ const FacultyDashboard = () => {
                   onGoToAttendance={handleGoToAttendance}
                   onFilterExport={handleFilterExport}
                   onBulkUpload={handleOpenBulkUpload}
+                  onViewStudents={handleViewStudents}
                   startingSession={startingSession}
                 />
               ))}
@@ -1273,6 +1290,7 @@ const FacultyDashboard = () => {
                   onGoToAttendance={handleGoToAttendance}
                   onFilterExport={handleFilterExport}
                   onBulkUpload={handleOpenBulkUpload}
+                  onViewStudents={handleViewStudents}
                   startingSession={startingSession}
                 />
               ))}
@@ -1988,6 +2006,19 @@ const FacultyDashboard = () => {
           onSuccess={() => {
             fetchClasses();
           }}
+        />
+      )}
+
+      {/* Student Details Modal */}
+      {selectedStudentsClass && (
+        <ClassStudentsModal
+          open={studentsModalOpen}
+          onOpenChange={(open) => {
+            setStudentsModalOpen(open);
+            if (!open) setSelectedStudentsClass(null);
+          }}
+          classItem={selectedStudentsClass}
+          onBulkUpload={handleOpenBulkUpload}
         />
       )}
 
