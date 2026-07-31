@@ -95,7 +95,7 @@ export const BulkStudentUploadModal = ({
         console.error("Error reading file preview:", err);
         toast({
           title: "File Read Error",
-          description: "Could not parse file content. Make sure it is a valid CSV or Excel spreadsheet.",
+          description: "Could not parse file content. Make sure it is a valid CSV spreadsheet.",
           variant: "destructive",
         });
       }
@@ -153,7 +153,7 @@ export const BulkStudentUploadModal = ({
     if (!selectedFile) {
       toast({
         title: "No file selected",
-        description: "Please choose a CSV or Excel file to upload.",
+        description: "Please choose a CSV file to upload.",
         variant: "destructive",
       });
       return;
@@ -255,7 +255,7 @@ export const BulkStudentUploadModal = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv, .xlsx, .xls"
+                  accept=".csv"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -301,13 +301,13 @@ export const BulkStudentUploadModal = ({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-foreground">
-                        Drag and drop your spreadsheet here, or{" "}
+                        Drag and drop your CSV file here, or{" "}
                         <span className="text-primary underline underline-offset-2 font-bold">
                           browse files
                         </span>
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Supports CSV (`.csv`) or Excel (`.xlsx`, `.xls`) files
+                        Only CSV (`.csv`) files are supported
                       </p>
                     </div>
                   </div>
