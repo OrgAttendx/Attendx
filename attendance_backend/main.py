@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
+from sqlalchemy import text
 from src.core.config import FRONTEND_URL
 from src.core.logging_config import setup_logging, get_logger
 from src.routers import auth, faculty, student
@@ -99,6 +100,37 @@ app.include_router(student.router)
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info("🚀 App startup: checking database migrations...")
+    try:
+        from src.core.database import engine
+        async with engine.begin() as conn:
+            # Migration: Add must_change_password column to users table
+            await conn.execute(text(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+                """
+            ))
+            # Migration: Add unique constraint on (session_id, student_id) for atomic upserts
+            await conn.execute(text(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'uq_attendance_session_student'
+                    ) THEN
+                        ALTER TABLE attendance_records
+                        ADD CONSTRAINT uq_attendance_session_student
+                        UNIQUE (session_id, student_id);
+                    END IF;
+                END
+                $$;
+                """
+            ))
+        logger.info("✅ App startup: database migrations applied successfully.")
+    except Exception as e:
+        logger.warning(f"⚠️ Startup database migration check failed or skipped: {e}")
     logger.info("🚀 App startup complete. Ready to serve requests.")
 
 
