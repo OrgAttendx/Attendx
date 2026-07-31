@@ -105,9 +105,18 @@ async def join_class(join_data: JoinClassRequest, current_user: dict = Depends(r
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _submit_code_internal(payload: SubmitAttendanceCode):
-    """Internal helper for attendance submission. Used by both the HTTP route and the SQS Lambda handler."""
-    logger.info(f"⏱️ [ATTENDANCE/SUBMIT_INTERNAL] Processing code submit for student_id={payload.student_id}, code='{payload.code}'")
+async def _submit_code_internal(payload: SubmitAttendanceCode, _retry_count: int = 0):
+    """Internal helper for attendance submission. Used by both the HTTP route and the SQS Lambda handler.
+    
+    Splits reads and writes into separate connections to minimize lock hold time:
+    - Phase 1 (READ): Session lookup, enrollment check, distance calc — no write transaction held.
+    - Phase 2 (WRITE): Atomic upsert with the shortest possible transaction window.
+    Includes retry-with-backoff for transient deadlock errors.
+    """
+    MAX_RETRIES = 3
+    logger.info(f"⏱️ [ATTENDANCE/SUBMIT_INTERNAL] Processing code submit for student_id={payload.student_id}, code='{payload.code}' (attempt {_retry_count + 1})")
+
+    # ── Phase 1: READ-ONLY — gather data without holding a write transaction ──
     sql_session = text(
         """
         SELECT session_id, class_id, latitude, longitude, radius_meters
@@ -116,7 +125,7 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
         LIMIT 1
         """
     )
-    async with engine.begin() as conn:
+    async with engine.connect() as conn:
         session = (await conn.execute(sql_session, {"code": payload.code})).fetchone()
         if not session:
             logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Invalid/expired code '{payload.code}' for student_id={payload.student_id}")
@@ -133,61 +142,65 @@ async def _submit_code_internal(payload: SubmitAttendanceCode):
         if not (await conn.execute(sql_enroll, {"sid": payload.student_id, "cid": class_id})).fetchone():
             logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Student ID={payload.student_id} not enrolled in class_id={class_id}")
             raise HTTPException(status_code=403, detail="Student not enrolled in this class")
-        
-        status = "PRESENT"
-        distance = None
-        location_message = ""
-        
-        if session_lat and session_lon:
-            if payload.latitude and payload.longitude:
-                distance = calculate_distance(
-                    float(session_lat), float(session_lon),
-                    payload.latitude, payload.longitude
-                )
-                student_accuracy = payload.accuracy or 0
-                accuracy_buffer = min(student_accuracy, 50)
-                effective_radius = radius_meters + accuracy_buffer
-                
-                if distance > effective_radius:
-                    status = "ABSENT"
-                    location_message = f" - Outside zone (Distance: {distance:.0f}m, Allowed: {effective_radius:.0f}m)"
-                    logger.warning(f"📍 [ATTENDANCE/LOCATION] Student ID={payload.student_id} outside geofence zone: {distance:.1f}m > {effective_radius:.1f}m")
-                else:
-                    location_message = f" - Within zone ({distance:.0f}m)"
-                    logger.info(f"📍 [ATTENDANCE/LOCATION] Student ID={payload.student_id} within geofence zone: {distance:.1f}m <= {effective_radius:.1f}m")
-            else:
-                logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Geofence active but student_id={payload.student_id} provided no coordinates")
-                raise HTTPException(status_code=400, detail="Location is required for this session.")
-        
-        # Upsert
-        update_sql = text(
-            """
-            UPDATE attendance_records
-            SET status = :status, marked_at = NOW()
-            WHERE session_id = :ses AND student_id = :sid
-            """
-        )
-        res = await conn.execute(update_sql, {"status": status, "ses": session_id, "sid": payload.student_id})
-        if res.rowcount == 0:
-            insert_sql = text(
-                """
-                INSERT INTO attendance_records (session_id, student_id, status, marked_at)
-                VALUES (:ses, :sid, :status, NOW())
-                """
-            )
-            await conn.execute(insert_sql, {"ses": session_id, "sid": payload.student_id, "status": status})
-        
-        class_sql = text("SELECT class_name, faculty_id FROM classes WHERE class_id = :cid")
-        c_row = (await conn.execute(class_sql, {"cid": class_id})).fetchone()
 
-        logger.info(f"✅ [ATTENDANCE/SUBMIT_INTERNAL] Attendance recorded: student_id={payload.student_id}, session_id={session_id}, status={status}")
-        return {
-            "message": f"Attendance marked as {status}{location_message}",
-            "session_id": session_id,
-            "status": status,
-            "distance": round(distance, 2) if distance else None,
-            "within_radius": status == "PRESENT"
-        }
+    # ── Location calculation (pure compute, no DB connection held) ──
+    status = "PRESENT"
+    distance = None
+    location_message = ""
+    
+    if session_lat and session_lon:
+        if payload.latitude and payload.longitude:
+            distance = calculate_distance(
+                float(session_lat), float(session_lon),
+                payload.latitude, payload.longitude
+            )
+            student_accuracy = payload.accuracy or 0
+            accuracy_buffer = min(student_accuracy, 50)
+            effective_radius = radius_meters + accuracy_buffer
+            
+            if distance > effective_radius:
+                status = "ABSENT"
+                location_message = f" - Outside zone (Distance: {distance:.0f}m, Allowed: {effective_radius:.0f}m)"
+                logger.warning(f"📍 [ATTENDANCE/LOCATION] Student ID={payload.student_id} outside geofence zone: {distance:.1f}m > {effective_radius:.1f}m")
+            else:
+                location_message = f" - Within zone ({distance:.0f}m)"
+                logger.info(f"📍 [ATTENDANCE/LOCATION] Student ID={payload.student_id} within geofence zone: {distance:.1f}m <= {effective_radius:.1f}m")
+        else:
+            logger.warning(f"⚠️ [ATTENDANCE/SUBMIT_INTERNAL] Geofence active but student_id={payload.student_id} provided no coordinates")
+            raise HTTPException(status_code=400, detail="Location is required for this session.")
+
+    # ── Phase 2: WRITE — minimal transaction window with atomic upsert ──
+    upsert_sql = text(
+        """
+        INSERT INTO attendance_records (session_id, student_id, status, marked_at)
+        VALUES (:ses, :sid, :status, NOW())
+        ON CONFLICT (session_id, student_id)
+        DO UPDATE SET status = EXCLUDED.status, marked_at = NOW()
+        """
+    )
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(upsert_sql, {"ses": session_id, "sid": payload.student_id, "status": status})
+    except Exception as e:
+        # Retry on deadlock / serialization errors with exponential backoff
+        error_str = str(e).lower()
+        is_deadlock = "deadlock" in error_str or "serialization" in error_str
+        if is_deadlock and _retry_count < MAX_RETRIES:
+            import asyncio
+            wait_seconds = (2 ** _retry_count) * 0.5  # 0.5s, 1s, 2s
+            logger.warning(f"🔄 [ATTENDANCE/DEADLOCK_RETRY] Deadlock on attempt {_retry_count + 1}, retrying in {wait_seconds}s for student_id={payload.student_id}")
+            await asyncio.sleep(wait_seconds)
+            return await _submit_code_internal(payload, _retry_count=_retry_count + 1)
+        raise
+
+    logger.info(f"✅ [ATTENDANCE/SUBMIT_INTERNAL] Attendance recorded: student_id={payload.student_id}, session_id={session_id}, status={status}")
+    return {
+        "message": f"Attendance marked as {status}{location_message}",
+        "session_id": session_id,
+        "status": status,
+        "distance": round(distance, 2) if distance else None,
+        "within_radius": status == "PRESENT"
+    }
 
 
 @router.post("/attendance/submit-code")
