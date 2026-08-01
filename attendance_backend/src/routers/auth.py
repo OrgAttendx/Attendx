@@ -114,15 +114,21 @@ async def register(request: RegisterRequest):
                 RETURNING user_id, name, email, role
                 """
             )
-            result = await conn.execute(
-                insert_sql,
-                {
-                    "name": request.name,
-                    "email": request.email,
-                    "password": hashed_password,
-                    "role": request.role
-                }
-            )
+            try:
+                result = await conn.execute(
+                    insert_sql,
+                    {
+                        "name": request.name,
+                        "email": request.email,
+                        "password": hashed_password,
+                        "role": request.role
+                    }
+                )
+            except Exception as reg_err:
+                if "unique" in str(reg_err).lower() or "duplicate key" in str(reg_err).lower():
+                    logger.warning(f"⚠️ [AUTH/REGISTER] Email already exists (race condition caught): {request.email}")
+                    raise HTTPException(status_code=400, detail="Email already registered")
+                raise reg_err
             
             user = dict(result.fetchone()._mapping)
             logger.info(f"✅ [AUTH/REGISTER] User registered successfully: user_id={user['user_id']}, role={user['role']}")
@@ -256,6 +262,21 @@ async def reset_password(request: ResetPasswordRequest):
                     detail="This reset link has expired"
                 )
             
+            # Mark token as used atomically to prevent double consumption
+            mark_used_sql = text("""
+                UPDATE password_reset_tokens
+                SET used = TRUE
+                WHERE token = :token AND used = FALSE
+                RETURNING user_id
+            """)
+            mark_res = await conn.execute(mark_used_sql, {"token": request.token})
+            if mark_res.rowcount == 0:
+                logger.warning(f"⚠️ [AUTH/RESET_PASSWORD] Token already used or consumed concurrently for user_id={token_data['user_id']}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="This reset link has already been used"
+                )
+
             # Hash new password
             new_password_hash = get_password_hash(request.new_password)
             
@@ -269,14 +290,6 @@ async def reset_password(request: ResetPasswordRequest):
                 "password_hash": new_password_hash,
                 "user_id": token_data["user_id"]
             })
-            
-            # Mark token as used
-            mark_used_sql = text("""
-                UPDATE password_reset_tokens
-                SET used = TRUE
-                WHERE token = :token
-            """)
-            await conn.execute(mark_used_sql, {"token": request.token})
             
             logger.info(f"✅ [AUTH/RESET_PASSWORD] Password reset successful for user_id={token_data['user_id']}")
         

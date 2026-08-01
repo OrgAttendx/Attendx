@@ -143,7 +143,7 @@ export default function LocationCapture({
           </div>
         )}
 
-        {status === "success" && location && location.accuracy > 500 ? (
+        {status === "success" && location && location.accuracy > 250 ? (
           <div className="space-y-3 rounded-2xl border border-amber-400/80 bg-amber-50/90 dark:bg-amber-950/40 p-4 text-amber-900 dark:text-amber-200">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300">
@@ -151,11 +151,11 @@ export default function LocationCapture({
                 Location Accuracy Too Low (±{Math.round(location.accuracy)}m)
               </div>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-200/90 text-amber-950 dark:bg-amber-900 dark:text-amber-100">
-                Required: ≤ ±500m
+                Required: ≤ ±250m
               </span>
             </div>
             <p className="text-xs text-amber-800 dark:text-amber-300">
-              GPS precision is too low for location verification. Turn <strong>Wi-Fi ON</strong>, turn <strong>Battery Saver OFF</strong>, or step near a window and click below to re-capture location.
+              GPS precision is lower than 250 meters. Please request your faculty member to mark your attendance <strong>manually</strong>, or try re-capturing with Wi-Fi ON.
             </p>
             <button
               type="button"
