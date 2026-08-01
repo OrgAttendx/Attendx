@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
-from sqlalchemy import text
+
 
 from src.core.config import FRONTEND_URL
 from src.core.logging_config import setup_logging, get_logger
@@ -101,64 +101,6 @@ app.include_router(student.router)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 App startup: checking database migrations...")
-    try:
-        from src.core.database import engine
-        
-        # Migration 1: Add UNIQUE constraint on (class_id, student_id) in class_enrollments
-        try:
-            async with engine.begin() as conn:
-                await conn.execute(text(
-                    """
-                    DO $$
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM pg_constraint
-                            WHERE conname = 'uq_enrollment_class_student'
-                        ) THEN
-                            ALTER TABLE class_enrollments
-                            ADD CONSTRAINT uq_enrollment_class_student
-                            UNIQUE (class_id, student_id);
-                        END IF;
-                    END
-                    $$;
-                    """
-                ))
-            logger.info("✅ Migration 1: uq_enrollment_class_student checked/applied.")
-        except Exception as e1:
-            logger.warning(f"⚠️ Migration 1 failed or skipped: {e1}")
-
-        # Migration 2: Auto-close duplicate ACTIVE sessions then create partial unique index
-        try:
-            async with engine.begin() as conn:
-                # First, close any legacy duplicate ACTIVE sessions (keep only the newest one per class)
-                await conn.execute(text(
-                    """
-                    UPDATE attendance_sessions
-                    SET status = 'CLOSED', end_time = NOW()
-                    WHERE status = 'ACTIVE'
-                      AND session_id NOT IN (
-                          SELECT MAX(session_id)
-                          FROM attendance_sessions
-                          WHERE status = 'ACTIVE'
-                          GROUP BY class_id
-                      );
-                    """
-                ))
-                # Now safely create the partial unique index
-                await conn.execute(text(
-                    """
-                    CREATE UNIQUE INDEX IF NOT EXISTS uq_one_active_session_per_class
-                    ON attendance_sessions (class_id)
-                    WHERE status = 'ACTIVE';
-                    """
-                ))
-            logger.info("✅ Migration 2: uq_one_active_session_per_class index created successfully.")
-        except Exception as e2:
-            logger.warning(f"⚠️ Migration 2 failed or skipped: {e2}")
-
-    except Exception as e:
-        logger.warning(f"⚠️ Startup database migration check failed or skipped: {e}")
     logger.info("🚀 App startup complete. Ready to serve requests.")
 
 
