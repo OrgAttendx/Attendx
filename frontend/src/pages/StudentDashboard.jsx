@@ -211,6 +211,8 @@ const StudentDashboard = () => {
 
   // Location state for attendance
   const [studentLocation, setStudentLocation] = useState(null);
+  const [accuracyWarningOpen, setAccuracyWarningOpen] = useState(false);
+  const [hasDismissedAccuracyWarning, setHasDismissedAccuracyWarning] = useState(false);
 
   const [attendanceRecords, setAttendanceRecords] = useState({});
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -466,6 +468,9 @@ const StudentDashboard = () => {
   // Handler for location capture
   const handleLocationCaptured = (locationData) => {
     setStudentLocation(locationData);
+    if (!hasDismissedAccuracyWarning && locationData && locationData.accuracy > 250) {
+      setAccuracyWarningOpen(true);
+    }
   };
 
   // ✅✅ ENTER CODE FIXED — RECORD CLASS + UPPERCASE CODE
@@ -478,6 +483,9 @@ const StudentDashboard = () => {
       });
       return;
     }
+
+    setAccuracyWarningOpen(false);
+    setHasDismissedAccuracyWarning(true);
 
     try {
       setIsSubmittingAttendance(true);
@@ -518,8 +526,8 @@ const StudentDashboard = () => {
       } else if (isAbsent) {
         title = "Attendance Marked: ABSENT ⚠️";
         description = (response.distance != null)
-          ? `✗ You are outside the classroom radius (${Math.round(response.distance)}m away). Marked as ABSENT.`
-          : "Your attendance has been recorded as ABSENT.";
+          ? `You were marked ABSENT (${Math.round(response.distance)}m away from classroom). Since your GPS signal was weak, please ask your faculty member to mark your attendance manually.`
+          : "Your attendance was recorded as ABSENT. If your GPS signal was weak, please ask your faculty member to mark your attendance manually.";
         variant = "destructive";
       } else {
         // Unexpected format — treat as success to avoid false alarm
@@ -1249,6 +1257,76 @@ const StudentDashboard = () => {
                 ) : (
                   "Leave Class"
                 )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Accuracy > 250m Weak GPS Signal Warning Pop-up */}
+        <Dialog open={accuracyWarningOpen} onOpenChange={setAccuracyWarningOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-lg">
+                <AlertTriangle className="h-6 w-6 text-amber-500 shrink-0" />
+                Weak GPS Signal (±{Math.round(studentLocation?.accuracy || 0)}m)
+              </DialogTitle>
+              <DialogDescription className="space-y-3 pt-3 text-foreground">
+                <p className="text-sm leading-relaxed">
+                  Your device reported a location accuracy of <strong>±{Math.round(studentLocation?.accuracy || 0)} meters</strong>, which is weak (greater than 250m).
+                </p>
+
+                <div className="space-y-2.5 p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 rounded-2xl text-xs sm:text-sm text-amber-900 dark:text-amber-200">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300 text-sm">
+                    📡 How to improve GPS signal:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 leading-relaxed">
+                    <li>Turn <strong>Wi-Fi ON</strong> (helps accuracy without needing to connect).</li>
+                    <li>Turn <strong>Battery Saver OFF</strong> and move near a window.</li>
+                  </ul>
+
+                  <p className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300 text-sm pt-2 border-t border-amber-200/80 dark:border-amber-800">
+                    ✍️ Next Steps:
+                  </p>
+                  <p className="leading-relaxed">
+                    Try submitting your attendance once. If your attendance is not marked <strong>PRESENT</strong>, please ask your faculty member to mark your attendance <strong>manually</strong> for this class.
+                  </p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-3">
+              <Button
+                variant="outline"
+                className="rounded-xl font-semibold"
+                onClick={() => {
+                  setAccuracyWarningOpen(false);
+                  setHasDismissedAccuracyWarning(true);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                variant="outline"
+                className="border-amber-500 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-xl font-semibold"
+                onClick={() => {
+                  setAccuracyWarningOpen(false);
+                  setHasDismissedAccuracyWarning(true);
+                  window.location.reload();
+                }}
+              >
+                Refresh & Retry 🔄
+              </Button>
+              <Button
+                variant="default"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl px-5"
+                onClick={() => {
+                  setAccuracyWarningOpen(false);
+                  setHasDismissedAccuracyWarning(true);
+                  if (enteredCode.trim()) {
+                    handleCodeSubmit();
+                  }
+                }}
+              >
+                Submit Attendance
               </Button>
             </div>
           </DialogContent>

@@ -117,17 +117,23 @@ async def create_faculty_class(class_data: CreateClassRequest, current_user: dic
                 RETURNING class_id, class_name, join_code
                 """
             )
-            res = await conn.execute(
-                sql,
-                {
-                    "class_name": class_data.class_name,
-                    "faculty_id": class_data.faculty_id,
-                    "join_code": join_code,
-                },
-            )
-            created_class = dict(res.fetchone()._mapping)
-            logger.info(f"✅ [FACULTY/CREATE_CLASS] Created class_id={created_class['class_id']} ('{created_class['class_name']}')")
-            return created_class
+            try:
+                res = await conn.execute(
+                    sql,
+                    {
+                        "class_name": class_data.class_name,
+                        "faculty_id": class_data.faculty_id,
+                        "join_code": join_code,
+                    },
+                )
+                created_class = dict(res.fetchone()._mapping)
+                logger.info(f"✅ [FACULTY/CREATE_CLASS] Created class_id={created_class['class_id']} ('{created_class['class_name']}')")
+                return created_class
+            except Exception as class_err:
+                if "unique" in str(class_err).lower() or "duplicate key" in str(class_err).lower():
+                    logger.warning(f"⚠️ [FACULTY/CREATE_CLASS] Duplicate class creation attempt for '{class_data.class_name}'")
+                    raise HTTPException(status_code=400, detail=f"A class with the name '{class_data.class_name}' already exists")
+                raise class_err
     except HTTPException:
         raise
     except Exception as e:
@@ -195,18 +201,26 @@ async def start_session(class_id: int, request: StartSessionRequest = None, curr
                 RETURNING session_id, class_id, start_time, status, generated_code, latitude, longitude, radius_meters
                 """
             )
-            res = await conn.execute(sql, {
-                "class_id": class_id, 
-                "start_time": current_time_ist, 
-                "code": code,
-                "lat": request.latitude,
-                "lon": request.longitude,
-                "rad": request.radius_meters
-            })
-            
-            session_data = dict(res.fetchone()._mapping)
-            logger.info(f"✅ [FACULTY/START_SESSION] Session started: session_id={session_data['session_id']}, code={code}")
-            return session_data
+            try:
+                res = await conn.execute(sql, {
+                    "class_id": class_id, 
+                    "start_time": current_time_ist, 
+                    "code": code,
+                    "lat": request.latitude,
+                    "lon": request.longitude,
+                    "rad": request.radius_meters
+                })
+                session_data = dict(res.fetchone()._mapping)
+                logger.info(f"✅ [FACULTY/START_SESSION] Session started: session_id={session_data['session_id']}, code={code}")
+                return session_data
+            except Exception as insert_err:
+                if "uq_one_active_session_per_class" in str(insert_err).lower() or "unique constraint" in str(insert_err).lower():
+                    logger.warning(f"⚠️ [FACULTY/START_SESSION] Concurrent session creation prevented, returning existing active session for class_id={class_id}")
+                    re_check = await conn.execute(check_sql, {"class_id": class_id})
+                    existing_after = re_check.fetchone()
+                    if existing_after:
+                        return dict(existing_after._mapping)
+                raise insert_err
     except Exception as e:
         logger.exception(f"❌ [FACULTY/START_SESSION] Error starting session for class_id={class_id}: {e}")
         if "column" in str(e).lower() and ("latitude" in str(e).lower() or "longitude" in str(e).lower()):
@@ -219,7 +233,6 @@ async def end_session(class_id: int, session_id: int, current_user: dict = Depen
     logger.info(f"🛑 [FACULTY/END_SESSION] Ending session_id={session_id} for class_id={class_id}")
     try:
         async with engine.begin() as conn:
-            # Mark absent students
             mark_absent_sql = text(
                 """
                 INSERT INTO attendance_records (session_id, student_id, status, marked_at)
@@ -231,6 +244,7 @@ async def end_session(class_id: int, session_id: int, current_user: dict = Depen
                     WHERE ar.session_id = :session_id
                     AND ar.student_id = ce.student_id
                 )
+                ON CONFLICT (session_id, student_id) DO NOTHING
                 """
             )
             await conn.execute(mark_absent_sql, {"session_id": session_id, "class_id": class_id})
@@ -574,16 +588,15 @@ async def mark_attendance_manual(session_id: int, payload: MarkAttendanceRequest
                  logger.warning(f"⚠️ [FACULTY/MARK_ATTENDANCE_MANUAL] Session not found: session_id={session_id}")
                  raise HTTPException(status_code=404, detail="Session not found")
             
-            # Upsert
-            upd = await conn.execute(
-                text("UPDATE attendance_records SET status = :st, marked_at = NOW() WHERE session_id = :sid AND student_id = :uid"),
-                {"st": status, "sid": session_id, "uid": payload.student_id}
+            upsert_sql = text(
+                """
+                INSERT INTO attendance_records (session_id, student_id, status, marked_at)
+                VALUES (:sid, :uid, :st, NOW())
+                ON CONFLICT (session_id, student_id)
+                DO UPDATE SET status = EXCLUDED.status, marked_at = NOW()
+                """
             )
-            if upd.rowcount == 0:
-                 await conn.execute(
-                    text("INSERT INTO attendance_records (session_id, student_id, status, marked_at) VALUES (:sid, :uid, :st, NOW())"),
-                    {"sid": session_id, "uid": payload.student_id, "st": status}
-                 )
+            await conn.execute(upsert_sql, {"sid": session_id, "uid": payload.student_id, "st": status})
             
             logger.info(f"✅ [FACULTY/MARK_ATTENDANCE_MANUAL] Updated student_id={payload.student_id} to status='{status}' for session_id={session_id}")
             return {"message": "Attendance updated", "status": status}

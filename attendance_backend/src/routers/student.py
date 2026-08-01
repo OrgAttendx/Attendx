@@ -76,26 +76,24 @@ async def join_class(join_data: JoinClassRequest, current_user: dict = Depends(r
                 raise HTTPException(status_code=404, detail="Invalid join code")
             class_id = class_row[0]
             
-            check_enroll = text("SELECT 1 FROM class_enrollments WHERE student_id = :student_id AND class_id = :class_id")
-            existing = (await conn.execute(check_enroll, {"student_id": join_data.student_id, "class_id": class_id})).fetchone()
-            
-            if existing:
-                logger.info(f"ℹ️ [STUDENT/JOIN_CLASS] Student ID={join_data.student_id} already enrolled in class_id={class_id}")
-                return {"message": "Already enrolled", "class_id": class_id}
-            
             enroll_sql = text(
                 """
                 INSERT INTO class_enrollments (student_id, class_id, roll_number, section)
                 VALUES (:student_id, :class_id, :roll_number, :section)
+                ON CONFLICT (class_id, student_id) DO NOTHING
+                RETURNING enrollment_id
                 """
             )
-            await conn.execute(enroll_sql, {
+            res = await conn.execute(enroll_sql, {
                 "student_id": join_data.student_id,
                 "class_id": class_id,
                 "roll_number": join_data.roll_number,
                 "section": section_value
             })
-            
+            if res.rowcount == 0:
+                logger.info(f"ℹ️ [STUDENT/JOIN_CLASS] Student ID={join_data.student_id} already enrolled in class_id={class_id}")
+                return {"message": "Already enrolled", "class_id": class_id}
+
             logger.info(f"✅ [STUDENT/JOIN_CLASS] Student ID={join_data.student_id} successfully joined class_id={class_id}")
             return {"message": "Successfully joined class", "class_id": class_id}
     except HTTPException:
