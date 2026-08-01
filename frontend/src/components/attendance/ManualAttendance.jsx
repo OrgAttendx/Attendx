@@ -16,6 +16,11 @@ import { attendanceApi } from "@/api/attendance";
 import { Input } from "@/components/ui/input";
 import { Search, X, UserMinus, Loader2 } from "lucide-react";
 
+const getStudentId = (s) => {
+  const id = s?.user_id ?? s?.student_id ?? s?.id;
+  return id != null ? Number(id) : null;
+};
+
 const ManualAttendance = ({
   classId,
   sessionId,
@@ -35,35 +40,28 @@ const ManualAttendance = ({
   useEffect(() => {
     const timeSinceLastAction = Date.now() - lastUserActionAt;
 
-
     // Briefly hold off syncing from backend after a manual toggle
     if (hasInitialized && timeSinceLastAction < 3500) {
       return;
     }
 
     const sid = Number(sessionId);
+    if (!sid) return;
+
+    // Match strictly by unique numeric ID for this specific session
     const alreadyPresent = new Set(
       attendance
         .filter(
           (r) =>
             Number(r.session_id) === sid && r.attendance_status === "PRESENT"
         )
-        .map((r) => r.student_id)
-    );
-    // fallback by name if id missing
-    const presentByName = new Set(
-      attendance
-        .filter(
-          (r) =>
-            Number(r.session_id) === sid && r.attendance_status === "PRESENT"
-        )
-        .map((r) => r.student_name)
+        .map((r) => Number(r.student_id ?? r.user_id))
+        .filter((id) => !isNaN(id))
     );
 
     const prechecked = students
-      .filter((s) => alreadyPresent.has(s.user_id) || presentByName.has(s.name))
-      .map((s) => s.user_id);
-
+      .map(getStudentId)
+      .filter((id) => id !== null && alreadyPresent.has(id));
 
     setAttended(prechecked);
     if (!hasInitialized) setHasInitialized(true);
@@ -83,11 +81,10 @@ const ManualAttendance = ({
 
   const toggleImmediate = async (student, nextChecked) => {
     // nextChecked (boolean) reflects the desired state AFTER the click.
-    const id = student.user_id;
-    if (rowLoading[id] || loading) return;
+    const id = getStudentId(student);
+    if (!id || rowLoading[id] || loading) return;
     const sid = Number(sessionId);
     const willCheck = !!nextChecked; // true => mark PRESENT, false => mark ABSENT
-
 
     setRowLoading((prev) => ({ ...prev, [id]: true }));
     setLastUserActionAt(Date.now());
@@ -134,37 +131,27 @@ const ManualAttendance = ({
             (r) =>
               Number(r.session_id) === sid && r.attendance_status === "PRESENT"
           )
-          .map((r) => r.student_id)
-      );
-      const currentPresentNames = new Set(
-        attendance
-          .filter(
-            (r) =>
-              Number(r.session_id) === sid && r.attendance_status === "PRESENT"
-          )
-          .map((r) => r.student_name)
+          .map((r) => Number(r.student_id ?? r.user_id))
+          .filter((id) => !isNaN(id))
       );
 
       let updatedCount = 0;
 
       // Process ALL students - mark present or absent
       for (const student of students) {
-        const isCurrentlyMarked =
-          currentPresent.has(student.user_id) ||
-          currentPresentNames.has(student.name);
-        const shouldBeMarked = attended.includes(student.user_id);
+        const id = getStudentId(student);
+        if (!id) continue;
+
+        const isCurrentlyMarked = currentPresent.has(id);
+        const shouldBeMarked = attended.includes(id);
 
         if (shouldBeMarked) {
           // Always mark as present if checked (even if already marked)
-          await attendanceApi.markManualAttendance(
-            sid,
-            student.user_id,
-            "PRESENT"
-          );
+          await attendanceApi.markManualAttendance(sid, id, "PRESENT");
           updatedCount++;
         } else if (isCurrentlyMarked) {
           // Only unmark if currently marked but not checked
-          await attendanceApi.unmarkAttendance(sid, student.user_id);
+          await attendanceApi.unmarkAttendance(sid, id);
         }
       }
 
@@ -268,11 +255,12 @@ const ManualAttendance = ({
             {/* Mobile stacked list */}
             <div className="space-y-3 sm:hidden">
               {filteredStudents.map((s) => {
-                const isChecked = attended.includes(s.user_id);
+                const studentId = getStudentId(s);
+                const isChecked = studentId != null && attended.includes(studentId);
 
                 return (
                   <div
-                    key={`${s.user_id}-mobile`}
+                    key={`${studentId || s.email || Math.random()}-mobile`}
                     className="rounded-xl border bg-card/70 p-3 shadow-sm animate-in fade-in-50 duration-200"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -289,7 +277,7 @@ const ManualAttendance = ({
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                        {rowLoading[s.user_id] ? (
+                        {studentId && rowLoading[studentId] ? (
                           <div className="flex items-center gap-1.5 text-xs text-primary font-medium py-1 animate-pulse">
                             <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
                             <span>Saving...</span>
@@ -298,7 +286,7 @@ const ManualAttendance = ({
                           <Checkbox
                             checked={isChecked}
                             onCheckedChange={(checked) => toggleImmediate(s, checked)}
-                            disabled={loading || !!rowLoading[s.user_id]}
+                            disabled={loading || (studentId ? !!rowLoading[studentId] : false)}
                           />
                         )}
                       </div>
@@ -325,10 +313,11 @@ const ManualAttendance = ({
                   </TableHeader>
                   <TableBody>
                     {filteredStudents.map((s) => {
-                      const isChecked = attended.includes(s.user_id);
+                      const studentId = getStudentId(s);
+                      const isChecked = studentId != null && attended.includes(studentId);
 
                       return (
-                        <TableRow key={s.user_id} className="hover:bg-muted/40 transition-colors animate-in fade-in-50 duration-200">
+                        <TableRow key={studentId || s.email || Math.random()} className="hover:bg-muted/40 transition-colors animate-in fade-in-50 duration-200">
                           <TableCell className="text-sm font-medium">
                             {s.roll_number || "—"}
                           </TableCell>
@@ -341,7 +330,7 @@ const ManualAttendance = ({
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {rowLoading[s.user_id] ? (
+                              {studentId && rowLoading[studentId] ? (
                                 <div className="flex items-center gap-1.5 text-xs text-primary font-medium py-1 animate-pulse">
                                   <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
                                   <span className="text-muted-foreground text-[11px]">Saving...</span>
@@ -352,7 +341,7 @@ const ManualAttendance = ({
                                   onCheckedChange={(checked) =>
                                     toggleImmediate(s, checked)
                                   }
-                                  disabled={loading || !!rowLoading[s.user_id]}
+                                  disabled={loading || (studentId ? !!rowLoading[studentId] : false)}
                                 />
                               )}
                             </div>
