@@ -13,6 +13,7 @@ import {
   TrendingUp,
   KeyRound,
   Download,
+  Loader,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/enhanced-button";
@@ -46,6 +47,7 @@ const FacultyDashboard = () => {
   const navigate = useNavigate();
 
   // Primary Data States
+  const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [endedClassIds, setEndedClassIds] = useState([]);
@@ -120,6 +122,8 @@ const FacultyDashboard = () => {
         variant: "destructive",
       });
       setClasses([]);
+    } finally {
+      setLoading(false);
     }
   }, [toast]);
 
@@ -321,6 +325,20 @@ const FacultyDashboard = () => {
           mergedSessions[cls.class_id]?.status !== "ended")) &&
       !endedClassIds.includes(cls.class_id)
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Header />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 py-20">
+          <Loader className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm font-medium text-muted-foreground">
+            Loading your classes...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background" key={updateCounter}>
