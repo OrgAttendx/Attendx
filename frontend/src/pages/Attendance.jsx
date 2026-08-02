@@ -28,16 +28,25 @@ const Attendance = () => {
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState([]);
 
-  // ✅ Targeted: only re-fetch attendance records (1 API call) — used after manual toggles
-  const refreshAttendance = useCallback(async () => {
-    if (!classId) return;
-    try {
-      const att = await classesAPI.getClassAttendance(classId);
-      setAttendance(att);
-    } catch (err) {
-      console.log("Attendance refresh error:", err);
-    }
-  }, [classId]);
+  // ⚡ Zero-cost: directly patch parent attendance state in memory (0 API calls)
+  // Called by ManualAttendance after a successful DB write — instantly syncs Code Generation tab
+  const updateAttendanceRecord = useCallback((studentId, status) => {
+    const sid = Number(sessionId);
+    setAttendance((prev) => {
+      const exists = prev.some(
+        (r) => Number(r.student_id) === studentId && Number(r.session_id) === sid
+      );
+      if (exists) {
+        return prev.map((r) =>
+          Number(r.student_id) === studentId && Number(r.session_id) === sid
+            ? { ...r, attendance_status: status }
+            : r
+        );
+      }
+      // No existing record — add a new one
+      return [...prev, { student_id: studentId, session_id: sid, attendance_status: status }];
+    });
+  }, [sessionId]);
 
   // ✅ Full refresh: session + students + attendance (3 API calls) — used on initial load & periodic poll
   const loadData = useCallback(async () => {
@@ -181,11 +190,7 @@ const Attendance = () => {
 
       <Tabs
         value={activeMethod}
-        onValueChange={(val) => {
-          setActiveMethod(val);
-          // On tab switch, only re-fetch attendance (1 call) — session & students don't change mid-session
-          refreshAttendance();
-        }}
+        onValueChange={setActiveMethod}
       >
         <TabsList>
           <TabsTrigger value="manual">Manual Attendance</TabsTrigger>
@@ -199,7 +204,7 @@ const Attendance = () => {
             sessionId={sessionId}
             students={students}
             attendance={attendance}
-            onAttendanceChange={refreshAttendance}
+            onAttendanceUpdate={updateAttendanceRecord}
           />
         </TabsContent>
 
