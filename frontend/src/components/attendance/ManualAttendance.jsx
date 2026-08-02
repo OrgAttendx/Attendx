@@ -40,8 +40,8 @@ const ManualAttendance = ({
   useEffect(() => {
     const timeSinceLastAction = Date.now() - lastUserActionAt;
 
-    // Briefly hold off syncing from backend after a manual toggle
-    if (hasInitialized && timeSinceLastAction < 3500) {
+    // Briefly hold off syncing from backend after a manual toggle to prevent stale polling overwrites
+    if (hasInitialized && timeSinceLastAction < 4000) {
       return;
     }
 
@@ -63,9 +63,29 @@ const ManualAttendance = ({
       .map(getStudentId)
       .filter((id) => id !== null && alreadyPresent.has(id));
 
-    setAttended(prechecked);
+    setAttended((prevAttended) => {
+      // Preserve any student currently being toggled in-flight
+      const inFlightIds = Object.keys(rowLoading)
+        .filter((k) => rowLoading[k])
+        .map(Number);
+
+      if (inFlightIds.length === 0) {
+        return prechecked;
+      }
+
+      const merged = new Set(prechecked);
+      inFlightIds.forEach((id) => {
+        if (prevAttended.includes(id)) {
+          merged.add(id);
+        } else {
+          merged.delete(id);
+        }
+      });
+      return Array.from(merged);
+    });
+
     if (!hasInitialized) setHasInitialized(true);
-  }, [attendance, students, sessionId, lastUserActionAt, hasInitialized]);
+  }, [attendance, students, sessionId, lastUserActionAt, hasInitialized, rowLoading]);
 
   // Real-time local filtering
   const filteredStudents = students.filter((s) => {
@@ -86,27 +106,37 @@ const ManualAttendance = ({
     const sid = Number(sessionId);
     const willCheck = !!nextChecked; // true => mark PRESENT, false => mark ABSENT
 
+    // 1. Optimistically update UI immediately so tick toggle is instantaneous
+    setAttended((prev) =>
+      willCheck
+        ? prev.includes(id)
+          ? prev
+          : [...prev, id]
+        : prev.filter((x) => x !== id)
+    );
     setRowLoading((prev) => ({ ...prev, [id]: true }));
     setLastUserActionAt(Date.now());
+
     try {
       if (willCheck) {
         await attendanceApi.markManualAttendance(sid, id, "PRESENT");
       } else {
         await attendanceApi.unmarkAttendance(sid, id);
       }
-      setAttended((prev) =>
-        willCheck
-          ? prev.includes(id)
-            ? prev
-            : [...prev, id]
-          : prev.filter((x) => x !== id)
-      );
       toast({
         title: willCheck ? "Marked Present" : "Marked Absent",
         description: student.name,
       });
     } catch (e) {
       console.error("Immediate toggle error:", e);
+      // Revert optimistic update on error
+      setAttended((prev) =>
+        willCheck
+          ? prev.filter((x) => x !== id)
+          : prev.includes(id)
+          ? prev
+          : [...prev, id]
+      );
       toast({
         title: "Error",
         description: e.message || "Failed to update attendance",
@@ -276,19 +306,15 @@ const ManualAttendance = ({
                           Section: {s.section || "—"}
                         </p>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        {studentId && rowLoading[studentId] ? (
-                          <div className="flex items-center gap-1.5 text-xs text-primary font-medium py-1 animate-pulse">
-                            <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                            <span>Saving...</span>
-                          </div>
-                        ) : (
-                          <Checkbox
-                            checked={isChecked}
-                            onCheckedChange={(checked) => toggleImmediate(s, checked)}
-                            disabled={loading || (studentId ? !!rowLoading[studentId] : false)}
-                          />
+                      <div className="flex items-center gap-2">
+                        {studentId && rowLoading[studentId] && (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
                         )}
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => toggleImmediate(s, checked)}
+                          disabled={loading || (studentId ? !!rowLoading[studentId] : false)}
+                        />
                       </div>
                     </div>
                   </div>
@@ -330,20 +356,16 @@ const ManualAttendance = ({
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {studentId && rowLoading[studentId] ? (
-                                <div className="flex items-center gap-1.5 text-xs text-primary font-medium py-1 animate-pulse">
-                                  <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                                  <span className="text-muted-foreground text-[11px]">Saving...</span>
-                                </div>
-                              ) : (
-                                <Checkbox
-                                  checked={isChecked}
-                                  onCheckedChange={(checked) =>
-                                    toggleImmediate(s, checked)
-                                  }
-                                  disabled={loading || (studentId ? !!rowLoading[studentId] : false)}
-                                />
+                              {studentId && rowLoading[studentId] && (
+                                <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
                               )}
+                              <Checkbox
+                                checked={isChecked}
+                                onCheckedChange={(checked) =>
+                                  toggleImmediate(s, checked)
+                                }
+                                disabled={loading || (studentId ? !!rowLoading[studentId] : false)}
+                              />
                             </div>
                           </TableCell>
                         </TableRow>
