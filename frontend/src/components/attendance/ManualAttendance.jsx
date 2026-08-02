@@ -26,36 +26,28 @@ const ManualAttendance = ({
   sessionId,
   students = [],
   attendance = [],
-  onAttendanceChange,
+  onAttendanceUpdate, // (studentId: number, status: "PRESENT"|"ABSENT") => void
 }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [attended, setAttended] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rowLoading, setRowLoading] = useState({}); // per-student in-flight
-  const [lastUserActionAt, setLastUserActionAt] = useState(0); // debounce auto-sync after manual toggles
-  const [hasInitialized, setHasInitialized] = useState(false); // track if we've done initial sync
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Pre-check those already present for this session
+  // ✅ One-time init: sync local attended[] from backend attendance on first load
+  // After init, attended[] is the sole source of truth for checkboxes in this tab.
+  // The 5-second background poll still syncs parent attendance[] for Code Generation tab,
+  // but we intentionally don't overwrite attended[] from it to prevent tick flicker.
+  const [hasInitialized, setHasInitialized] = useState(false);
   useEffect(() => {
-    const timeSinceLastAction = Date.now() - lastUserActionAt;
-
-    // Briefly hold off syncing from backend after a manual toggle to prevent stale polling overwrites
-    if (hasInitialized && timeSinceLastAction < 4000) {
-      return;
-    }
-
+    if (hasInitialized) return; // never overwrite after first sync
     const sid = Number(sessionId);
-    if (!sid) return;
+    if (!sid || students.length === 0) return;
 
-    // Match strictly by unique numeric ID for this specific session
     const alreadyPresent = new Set(
       attendance
-        .filter(
-          (r) =>
-            Number(r.session_id) === sid && r.attendance_status === "PRESENT"
-        )
+        .filter((r) => Number(r.session_id) === sid && r.attendance_status === "PRESENT")
         .map((r) => Number(r.student_id ?? r.user_id))
         .filter((id) => !isNaN(id))
     );
@@ -64,29 +56,9 @@ const ManualAttendance = ({
       .map(getStudentId)
       .filter((id) => id !== null && alreadyPresent.has(id));
 
-    setAttended((prevAttended) => {
-      // Preserve any student currently being toggled in-flight
-      const inFlightIds = Object.keys(rowLoading)
-        .filter((k) => rowLoading[k])
-        .map(Number);
-
-      if (inFlightIds.length === 0) {
-        return prechecked;
-      }
-
-      const merged = new Set(prechecked);
-      inFlightIds.forEach((id) => {
-        if (prevAttended.includes(id)) {
-          merged.add(id);
-        } else {
-          merged.delete(id);
-        }
-      });
-      return Array.from(merged);
-    });
-
-    if (!hasInitialized) setHasInitialized(true);
-  }, [attendance, students, sessionId, lastUserActionAt, hasInitialized, rowLoading]);
+    setAttended(prechecked);
+    setHasInitialized(true);
+  }, [attendance, students, sessionId, hasInitialized]);
 
   // Real-time local filtering
   const filteredStudents = students.filter((s) => {
@@ -101,22 +73,18 @@ const ManualAttendance = ({
   });
 
   const toggleImmediate = async (student, nextChecked) => {
-    // nextChecked (boolean) reflects the desired state AFTER the click.
     const id = getStudentId(student);
     if (!id || rowLoading[id] || loading) return;
     const sid = Number(sessionId);
-    const willCheck = !!nextChecked; // true => mark PRESENT, false => mark ABSENT
+    const willCheck = !!nextChecked;
 
-    // 1. Optimistically update UI immediately so tick toggle is instantaneous
+    // 1. Instantly update local checkbox state (optimistic UI)
     setAttended((prev) =>
       willCheck
-        ? prev.includes(id)
-          ? prev
-          : [...prev, id]
+        ? prev.includes(id) ? prev : [...prev, id]
         : prev.filter((x) => x !== id)
     );
     setRowLoading((prev) => ({ ...prev, [id]: true }));
-    setLastUserActionAt(Date.now());
 
     try {
       if (willCheck) {
@@ -124,24 +92,23 @@ const ManualAttendance = ({
       } else {
         await attendanceApi.unmarkAttendance(sid, id);
       }
+
+      // 2. Directly patch parent attendance[] in memory (0 API calls, instant Code Generation sync)
+      if (typeof onAttendanceUpdate === "function") {
+        onAttendanceUpdate(id, willCheck ? "PRESENT" : "ABSENT");
+      }
+
       toast({
         title: willCheck ? "Marked Present" : "Marked Absent",
         description: student.name,
       });
-
-      // ⚡ Instantly re-fetch parent attendance state so Code Generation & all tabs update immediately
-      if (typeof onAttendanceChange === "function") {
-        onAttendanceChange();
-      }
     } catch (e) {
-      console.error("Immediate toggle error:", e);
+      console.error("Toggle error:", e);
       // Revert optimistic update on error
       setAttended((prev) =>
         willCheck
           ? prev.filter((x) => x !== id)
-          : prev.includes(id)
-          ? prev
-          : [...prev, id]
+          : prev.includes(id) ? prev : [...prev, id]
       );
       toast({
         title: "Error",
@@ -196,8 +163,14 @@ const ManualAttendance = ({
         description: `${updatedCount} students marked PRESENT.`,
       });
 
-      if (typeof onAttendanceChange === "function") {
-        onAttendanceChange();
+      // Patch parent state in memory for each student (0 API calls)
+      if (typeof onAttendanceUpdate === "function") {
+        for (const student of students) {
+          const id = getStudentId(student);
+          if (!id) continue;
+          const status = attended.includes(id) ? "PRESENT" : "ABSENT";
+          onAttendanceUpdate(id, status);
+        }
       }
 
       // Navigate back to faculty dashboard after successful submission
