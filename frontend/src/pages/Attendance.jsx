@@ -28,22 +28,21 @@ const Attendance = () => {
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState([]);
 
-  // ✅ AUTO REFRESH — Every 3 seconds
+  // ✅ AUTO REFRESH — Every 5 seconds
   useEffect(() => {
     if (!classId || !sessionId) return;
 
     const loadData = async () => {
       try {
-        // ✅ 1. Session details (code + status)
-        const s = await attendanceApi.getSessionById(sessionId);
+        // Fetch all data in parallel to avoid partial state updates causing race conditions
+        const [s, st, att] = await Promise.all([
+          attendanceApi.getSessionById(sessionId),
+          classesAPI.getClassStudents(classId),
+          classesAPI.getClassAttendance(classId),
+        ]);
+
         setSession(s);
-
-        // ✅ 2. Enrolled students
-        const st = await classesAPI.getClassStudents(classId);
         setStudents(st);
-
-        // ✅ 3. Attendance records (correct API)
-        const att = await classesAPI.getClassAttendance(classId);
         setAttendance(att);
       } catch (err) {
         console.log("Live refresh error:", err);
@@ -51,7 +50,7 @@ const Attendance = () => {
     };
 
     loadData(); // run immediately
-    const interval = setInterval(loadData, 10000);
+    const interval = setInterval(loadData, 5000);
 
     return () => clearInterval(interval);
   }, [classId, sessionId]);
