@@ -1,5 +1,5 @@
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,32 +28,43 @@ const Attendance = () => {
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState([]);
 
-  // ✅ AUTO REFRESH — Every 5 seconds
+  // ✅ Targeted: only re-fetch attendance records (1 API call) — used after manual toggles
+  const refreshAttendance = useCallback(async () => {
+    if (!classId) return;
+    try {
+      const att = await classesAPI.getClassAttendance(classId);
+      setAttendance(att);
+    } catch (err) {
+      console.log("Attendance refresh error:", err);
+    }
+  }, [classId]);
+
+  // ✅ Full refresh: session + students + attendance (3 API calls) — used on initial load & periodic poll
+  const loadData = useCallback(async () => {
+    if (!classId || !sessionId) return;
+    try {
+      // Fetch all data in parallel to avoid partial state updates causing race conditions
+      const [s, st, att] = await Promise.all([
+        attendanceApi.getSessionById(sessionId),
+        classesAPI.getClassStudents(classId),
+        classesAPI.getClassAttendance(classId),
+      ]);
+
+      setSession(s);
+      setStudents(st);
+      setAttendance(att);
+    } catch (err) {
+      console.log("Live refresh error:", err);
+    }
+  }, [classId, sessionId]);
+
+  // ✅ AUTO REFRESH — Every 5 seconds (full refresh)
   useEffect(() => {
     if (!classId || !sessionId) return;
-
-    const loadData = async () => {
-      try {
-        // Fetch all data in parallel to avoid partial state updates causing race conditions
-        const [s, st, att] = await Promise.all([
-          attendanceApi.getSessionById(sessionId),
-          classesAPI.getClassStudents(classId),
-          classesAPI.getClassAttendance(classId),
-        ]);
-
-        setSession(s);
-        setStudents(st);
-        setAttendance(att);
-      } catch (err) {
-        console.log("Live refresh error:", err);
-      }
-    };
-
     loadData(); // run immediately
     const interval = setInterval(loadData, 5000);
-
     return () => clearInterval(interval);
-  }, [classId, sessionId]);
+  }, [classId, sessionId, loadData]);
 
   return (
     <div className="container mx-auto p-3 sm:p-4">
@@ -168,7 +179,14 @@ const Attendance = () => {
         </Card>
       )}
 
-      <Tabs value={activeMethod} onValueChange={setActiveMethod}>
+      <Tabs
+        value={activeMethod}
+        onValueChange={(val) => {
+          setActiveMethod(val);
+          // On tab switch, only re-fetch attendance (1 call) — session & students don't change mid-session
+          refreshAttendance();
+        }}
+      >
         <TabsList>
           <TabsTrigger value="manual">Manual Attendance</TabsTrigger>
           <TabsTrigger value="code">Code Generation</TabsTrigger>
@@ -181,6 +199,7 @@ const Attendance = () => {
             sessionId={sessionId}
             students={students}
             attendance={attendance}
+            onAttendanceChange={refreshAttendance}
           />
         </TabsContent>
 

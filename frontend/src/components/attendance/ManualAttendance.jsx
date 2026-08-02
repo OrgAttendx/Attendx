@@ -26,6 +26,7 @@ const ManualAttendance = ({
   sessionId,
   students = [],
   attendance = [],
+  onAttendanceChange,
 }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -127,6 +128,11 @@ const ManualAttendance = ({
         title: willCheck ? "Marked Present" : "Marked Absent",
         description: student.name,
       });
+
+      // ⚡ Instantly re-fetch parent attendance state so Code Generation & all tabs update immediately
+      if (typeof onAttendanceChange === "function") {
+        onAttendanceChange();
+      }
     } catch (e) {
       console.error("Immediate toggle error:", e);
       // Revert optimistic update on error
@@ -189,6 +195,10 @@ const ManualAttendance = ({
         title: "Attendance Updated",
         description: `${updatedCount} students marked PRESENT.`,
       });
+
+      if (typeof onAttendanceChange === "function") {
+        onAttendanceChange();
+      }
 
       // Navigate back to faculty dashboard after successful submission
       setTimeout(() => {
