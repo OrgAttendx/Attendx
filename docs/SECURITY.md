@@ -191,7 +191,7 @@ Students could:
 | Defense | File | Description |
 |---|---|---|
 | **Hidden coordinates** | [LocationCapture.jsx](file:///c:/Users/achyu/OneDrive/Documents/GitHub/facul-student-hub/frontend/src/components/attendance/LocationCapture.jsx) | Raw lat/lon no longer displayed — only shows "Location captured" with accuracy |
-| **Coordinate validation** | [schemas.py](file:///c:/Users/achyu/OneDrive/Documents/GitHub/facul-student-hub/attendance_backend/src/models/schemas.py) | Pydantic rejects `lat > 90`, `lon > 180`, `accuracy <= 0` or `> 500` |
+| **Coordinate validation** | [schemas.py](file:///c:/Users/achyu/OneDrive/Documents/GitHub/facul-student-hub/attendance_backend/src/models/schemas.py) | Pydantic rejects `lat > 90`, `lon > 180`, `accuracy <= 0` |
 | **Tighter radius** | [student.py](file:///c:/Users/achyu/OneDrive/Documents/GitHub/facul-student-hub/attendance_backend/src/routers/student.py) | Default radius reduced from 500m → 100m |
 | **Tighter accuracy buffer** | student.py | Accuracy cap reduced from 100m → 50m |
 | **60-second cooldown** | student.py | Prevents brute-force location guessing (same student, same session) |
@@ -207,8 +207,8 @@ def validate_latitude(cls, v):
 
 @validator("accuracy")
 def validate_accuracy(cls, v):
-    if v is not None and (v <= 0 or v > 500):
-        raise ValueError("Accuracy must be between 0 and 500 meters")
+    if v is not None and v <= 0:
+        raise ValueError("Accuracy must be greater than 0 meters")
 ```
 
 > [!WARNING]
