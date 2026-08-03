@@ -62,8 +62,8 @@ class SubmitAttendanceCode(BaseModel):
 
     @validator("accuracy")
     def validate_accuracy(cls, v):
-        if v is not None and (v <= 0 or v > 500):
-            raise ValueError("Accuracy must be between 0 and 500 meters. A value of 0 indicates spoofed location.")
+        if v is not None and v <= 0:
+            raise ValueError("Accuracy must be greater than 0 meters. A value of 0 indicates spoofed location.")
         return v
 
 
